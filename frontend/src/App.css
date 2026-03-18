@@ -1,34 +1,86 @@
-.App-logo {
-    height: 40vmin;
-    pointer-events: none;
+/* Chat bubble styles */
+.chat-bubble-ai {
+    @apply bg-slate-800 text-slate-200 rounded-lg p-4 max-w-[85%] border-l-4 border-emerald-500 shadow-sm;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-    .App-logo {
-        animation: App-logo-spin infinite 20s linear;
-    }
+.chat-bubble-user {
+    @apply bg-emerald-600 text-white rounded-lg p-4 max-w-[85%] ml-auto shadow-md;
 }
 
-.App-header {
-    background-color: #0f0f10;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-size: calc(10px + 2vmin);
-    color: white;
+/* Card hover effects */
+.role-card {
+    @apply bg-slate-900/50 border border-slate-800 backdrop-blur-sm shadow-xl transition-all duration-300;
 }
 
-.App-link {
-    color: #61dafb;
+.role-card:hover {
+    @apply border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.15)];
 }
 
-@keyframes App-logo-spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
+.role-card.selected {
+    @apply border-emerald-500 bg-emerald-500/10;
+}
+
+/* Button styles */
+.btn-primary {
+    @apply bg-emerald-500 text-slate-900 font-medium rounded-md transition-all duration-200 shadow-[0_0_15px_rgba(16,185,129,0.3)] hover:bg-emerald-400 hover:shadow-[0_0_25px_rgba(16,185,129,0.5)];
+}
+
+.btn-secondary {
+    @apply bg-slate-800 text-slate-200 font-medium rounded-md transition-all duration-200 border border-slate-700 hover:bg-slate-700;
+}
+
+.btn-ghost {
+    @apply text-slate-400 font-medium rounded-md transition-all duration-200 hover:bg-slate-800 hover:text-slate-200;
+}
+
+/* Experience toggle */
+.experience-toggle {
+    @apply flex bg-slate-800/50 rounded-lg p-1 border border-slate-700;
+}
+
+.experience-option {
+    @apply px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 cursor-pointer;
+}
+
+.experience-option:not(.selected) {
+    @apply text-slate-400 hover:text-slate-200;
+}
+
+.experience-option.selected {
+    @apply bg-emerald-500 text-slate-900;
+}
+
+/* Score circle */
+.score-circle {
+    @apply relative w-32 h-32 rounded-full flex items-center justify-center;
+    background: conic-gradient(#10b981 calc(var(--score) * 1%), #1e293b 0%);
+}
+
+.score-circle::before {
+    content: '';
+    @apply absolute w-24 h-24 rounded-full bg-slate-900;
+}
+
+/* Loading dots */
+.loading-dots {
+    @apply flex gap-1;
+}
+
+.loading-dots span {
+    @apply w-2 h-2 rounded-full bg-emerald-500;
+    animation: bounce 1.4s infinite ease-in-out both;
+}
+
+.loading-dots span:nth-child(1) { animation-delay: -0.32s; }
+.loading-dots span:nth-child(2) { animation-delay: -0.16s; }
+.loading-dots span:nth-child(3) { animation-delay: 0s; }
+
+@keyframes bounce {
+    0%, 80%, 100% { transform: scale(0); }
+    40% { transform: scale(1); }
+}
+
+/* Textarea auto-resize styling */
+.chat-input {
+    @apply resize-none overflow-hidden min-h-[48px] max-h-[200px];
 }
