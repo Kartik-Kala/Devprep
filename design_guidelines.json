@@ -1,0 +1,174 @@
+{
+  "project_name": "DevPrep India",
+  "design_system": {
+    "theme": {
+      "mode": "dark",
+      "strategy": "force-dark",
+      "colors": {
+        "background": "#020617",
+        "foreground": "#f8fafc",
+        "primary": "#10b981",
+        "primary_foreground": "#020617",
+        "secondary": "#1e293b",
+        "secondary_foreground": "#f8fafc",
+        "accent": "#059669",
+        "accent_foreground": "#ffffff",
+        "muted": "#0f172a",
+        "muted_foreground": "#94a3b8",
+        "border": "#1e293b",
+        "input": "#1e293b",
+        "ring": "#10b981",
+        "destructive": "#ef4444",
+        "card": "#0f172a",
+        "card_foreground": "#f8fafc"
+      },
+      "typography": {
+        "font_family": {
+          "sans": "Inter, sans-serif",
+          "mono": "JetBrains Mono, monospace"
+        },
+        "headings": {
+          "font": "font-mono",
+          "weight": "font-bold",
+          "tracking": "tracking-tight"
+        },
+        "body": {
+          "font": "font-sans",
+          "weight": "font-normal",
+          "leading": "leading-relaxed"
+        }
+      },
+      "radius": "0.375rem"
+    },
+    "layout": {
+      "spacing": {
+        "container_padding": "p-4 md:p-8 lg:p-12",
+        "section_gap": "gap-8 md:gap-12",
+        "component_gap": "gap-4"
+      },
+      "grid": {
+        "landing": "grid-cols-1 md:grid-cols-2 gap-8 items-center",
+        "dashboard": "grid-cols-1 md:grid-cols-12 gap-6"
+      },
+      "containers": {
+        "max_width": "max-w-5xl mx-auto",
+        "card_padding": "p-6"
+      }
+    },
+    "components": {
+      "button": {
+        "style": "rounded-md font-medium transition-all duration-200",
+        "variants": {
+          "primary": "bg-primary text-primary-foreground hover:bg-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.3)] hover:shadow-[0_0_25px_rgba(16,185,129,0.5)]",
+          "secondary": "bg-secondary text-secondary-foreground hover:bg-slate-700 border border-slate-700",
+          "outline": "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
+          "ghost": "hover:bg-accent hover:text-accent-foreground"
+        }
+      },
+      "input": {
+        "style": "bg-slate-950 border-slate-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
+      },
+      "card": {
+        "style": "bg-slate-900/50 border border-slate-800 backdrop-blur-sm shadow-xl"
+      },
+      "chat_bubble": {
+        "ai": "bg-slate-800 text-slate-200 rounded-lg p-4 max-w-[85%] border-l-4 border-emerald-500 shadow-sm",
+        "user": "bg-emerald-600 text-white rounded-lg p-4 max-w-[85%] ml-auto shadow-md"
+      }
+    },
+    "visual_enhancers": {
+      "gradients": {
+        "hero_glow": "bg-gradient-to-tr from-emerald-500/10 via-slate-900/0 to-slate-900/0",
+        "subtle_overlay": "bg-gradient-to-b from-transparent to-background"
+      },
+      "effects": {
+        "glass": "backdrop-blur-md bg-background/80 border border-border/50",
+        "neon_glow": "shadow-[0_0_10px_rgba(16,185,129,0.2)]"
+      },
+      "animations": {
+        "fade_in": "animate-in fade-in duration-500",
+        "slide_up": "animate-in slide-in-from-bottom-4 duration-500",
+        "pulse_slow": "animate-pulse duration-[3000ms]"
+      }
+    }
+  },
+  "assets": {
+    "images": {
+      "hero_background": {
+        "url": "https://images.unsplash.com/photo-1641749471127-3f76436e8b38?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTN8MHwxfHNlYXJjaHwyfHxhYnN0cmFjdCUyMGRhcmslMjBtaW5pbWFsJTIwdGVjaG5vbG9neSUyMGJhY2tncm91bmQlMjBkaWdpdGFsJTIwbWVzaHxlbnwwfHx8fDE3NzM4MTQ2NDV8MA&ixlib=rb-4.1.0&q=85",
+        "alt": "Abstract digital mesh background",
+        "usage": "Use as a subtle background overlay with low opacity (10-20%) on the landing page to give depth."
+      },
+      "fallback_background": {
+        "url": "https://images.unsplash.com/photo-1667000190543-86091e737f20?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTN8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMGRhcmslMjBtaW5pbWFsJTIwdGVjaG5vbG9neSUyMGJhY2tncm91bmQlMjBkaWdpdGFsJTIwbWVzaHxlbnwwfHx8fDE3NzM4MTQ2NDV8MA&ixlib=rb-4.1.0&q=85",
+        "alt": "Minimal dark texture",
+        "usage": "Alternative background if the primary is too distracting."
+      }
+    },
+    "icons": {
+      "library": "lucide-react",
+      "suggestions": {
+        "code": "Code2",
+        "frontend": "LayoutTemplate",
+        "backend": "Database",
+        "fullstack": "Layers",
+        "send": "SendHorizontal",
+        "loading": "Loader2",
+        "success": "CheckCircle2",
+        "error": "AlertCircle",
+        "score": "Trophy"
+      }
+    }
+  },
+  "pages": {
+    "landing": {
+      "structure": [
+        "Hero Section: Centered layout. Headline: 'Master Your Tech Interview'. Subhead: 'AI-powered mock interviews tailored for Indian developers.'",
+        "Role Selection: Grid of 3 Cards (Frontend, Backend, Full Stack). Each card must be interactive with hover effects.",
+        "Experience Selection: Simple toggle or segmented control (Fresher, 1-3 years, 3+ years).",
+        "CTA: 'Start Interview' button (Primary variant, large)."
+      ],
+      "styles": "min-h-screen flex flex-col justify-center items-center relative overflow-hidden"
+    },
+    "interview": {
+      "structure": [
+        "Header: Minimal. Shows current role/level and 'End Session' button (ghost variant).",
+        "Chat Area: Central scrollable area. Messages appear from bottom. Use 'chat_bubble' component styles.",
+        "Input Area: Fixed at bottom. Textarea with auto-resize. Send button on right.",
+        "Feedback Area: Optional floating panel or inline message for AI feedback after each answer."
+      ],
+      "styles": "h-screen flex flex-col max-w-4xl mx-auto"
+    },
+    "results": {
+      "structure": [
+        "Score Card: Large circular progress or clean number display (e.g., '8/10').",
+        "Feedback List: Accordion or list of questions with detailed AI feedback.",
+        "Action Buttons: 'Retry' (Secondary) and 'Back to Home' (Ghost)."
+      ],
+      "styles": "min-h-screen py-12 px-4 max-w-3xl mx-auto"
+    }
+  },
+  "implementation_instructions": {
+    "global_css": [
+      "Set `html { class='dark' }` to force dark mode.",
+      "Add `@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap');` to index.css.",
+      "Update tailwind.config.js to extend colors with the provided palette."
+    ],
+    "components": [
+      "Use Shadcn UI components as the base but override styles using the `className` prop to match the 'Anti-AI' aesthetic defined in `components` section.",
+      "Ensure all interactive elements have `data-testid` attributes."
+    ],
+    "accessibility": [
+      "Ensure text contrast meets WCAG AA (The provided palette is pre-checked).",
+      "Use semantic HTML (main, section, article, button)."
+    ]
+  },
+  "universal_guidelines": [
+    "Do NOT use gradients for text. It reduces readability.",
+    "Do NOT use pure black (#000000). Use the provided #020617 or #0f172a.",
+    "Do NOT center align long text blocks. Left align for readability.",
+    "Use 'sonner' for toast notifications.",
+    "All buttons must have a hover state that is visibly distinct.",
+    "Animations should be subtle (opacity/transform), never layout-shifting."
+  ]
+}
