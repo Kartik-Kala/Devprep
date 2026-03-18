@@ -1,226 +1,524 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
-import { SendHorizontal, Loader2, LogOut } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { toast } from "sonner";
+import { Mic, MicOff, PhoneOff, Video, VideoOff } from "lucide-react";
 import axios from "axios";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
+const STATE = {
+  CONNECTING: "connecting",
+  SPEAKING: "speaking",
+  LISTENING: "listening",
+  PROCESSING: "processing",
+  COMPLETE: "complete",
+};
+
 export default function InterviewPage() {
   const { sessionId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const scrollRef = useRef(null);
-  const textareaRef = useRef(null);
 
-  const [messages, setMessages] = useState([]);
-  const [answer, setAnswer] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [state, setState] = useState(STATE.CONNECTING);
   const [currentQuestion, setCurrentQuestion] = useState(1);
-  const [totalQuestions] = useState(5);
-  const [isComplete, setIsComplete] = useState(false);
+  const [transcript, setTranscript] = useState("");
+  const [statusText, setStatusText] = useState("Connecting...");
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [camOn, setCamOn] = useState(true);
+  const [subtitleText, setSubtitleText] = useState("");
+
+  const recognitionRef = useRef(null);
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const pendingAnswerRef = useRef("");
 
   const role = location.state?.role || "Developer";
   const experience = location.state?.experience || "Fresher";
+  const totalQuestions = 5;
 
+  // start camera
   useEffect(() => {
-    // Initialize with first question from navigation state
-    if (location.state?.firstQuestion) {
-      setMessages([
-        {
-          type: "question",
-          content: location.state.firstQuestion,
-          questionNumber: 1,
-        },
-      ]);
-    }
-  }, [location.state]);
+    const startCamera = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        streamRef.current = stream;
+        if (videoRef.current) videoRef.current.srcObject = stream;
+      } catch (err) {
+        console.error("Camera error:", err);
+        setCamOn(false);
+      }
+    };
+    startCamera();
 
-  useEffect(() => {
-    // Scroll to bottom when messages change
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages]);
+    return () => {
+      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+      window.speechSynthesis.cancel();
+      if (recognitionRef.current) recognitionRef.current.stop();
+    };
+  }, []);
 
-  const handleSubmitAnswer = async () => {
-    if (!answer.trim()) {
-      toast.error("Please enter your answer");
+  // browser TTS
+  const speakText = (text) => {
+    return new Promise((resolve) => {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+
+      const voices = window.speechSynthesis.getVoices();
+      const preferred = voices.find(v =>
+        v.name.includes("Samantha") ||
+        v.name.includes("Karen") ||
+        v.name.includes("Daniel") ||
+        (v.lang.startsWith("en") && !v.name.includes("Google"))
+      );
+      if (preferred) utterance.voice = preferred;
+
+      utterance.rate = 0.95;
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+
+      utterance.onstart = () => {
+        setState(STATE.SPEAKING);
+        setIsSpeaking(true);
+        setSubtitleText(text);
+      };
+
+      utterance.onend = () => {
+        setIsSpeaking(false);
+        setSubtitleText("");
+        resolve();
+      };
+
+      utterance.onerror = () => {
+        setIsSpeaking(false);
+        setSubtitleText("");
+        resolve();
+      };
+
+      window.speechSynthesis.speak(utterance);
+    });
+  };
+
+  // start mic
+  const startListening = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setStatusText("Speech recognition not supported. Use Safari or Chrome.");
       return;
     }
 
-    setIsSubmitting(true);
-    
-    // Add user answer to messages
-    setMessages((prev) => [
-      ...prev,
-      { type: "answer", content: answer.trim() },
-    ]);
-    setAnswer("");
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-IN";
+
+    recognition.onstart = () => {
+      setState(STATE.LISTENING);
+      setStatusText("Listening... speak your answer");
+      setTranscript("");
+      pendingAnswerRef.current = "";
+    };
+
+    recognition.onresult = (event) => {
+      let interim = "";
+      let final = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const t = event.results[i][0].transcript;
+        if (event.results[i].isFinal) final += t;
+        else interim += t;
+      }
+      if (final) {
+        pendingAnswerRef.current = (pendingAnswerRef.current + " " + final).trim();
+      }
+      setTranscript(pendingAnswerRef.current || interim);
+    };
+
+    recognition.onerror = (e) => {
+      if (e.error !== "no-speech") console.error("Speech error:", e.error);
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  };
+
+  // submit answer
+  const stopAndSubmit = async () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+
+    const answer = pendingAnswerRef.current.trim() || transcript.trim();
+    if (!answer) {
+      setStatusText("No answer detected. Please try again.");
+      setTimeout(() => startListening(), 1000);
+      return;
+    }
+
+    pendingAnswerRef.current = "";
+    setTranscript("");
+    setState(STATE.PROCESSING);
+    setStatusText("Processing...");
 
     try {
       const response = await axios.post(`${API}/interview/answer`, {
         session_id: sessionId,
-        answer: answer.trim(),
+        answer,
       });
 
-      // Add feedback
-      setMessages((prev) => [
-        ...prev,
-        { type: "feedback", content: response.data.feedback },
-      ]);
+      const { conversational_response, next_question, is_complete, current_question_number } = response.data;
 
-      if (response.data.is_complete) {
-        setIsComplete(true);
-        setTimeout(() => {
-          navigate(`/results/${sessionId}`);
-        }, 2000);
+      // speak conversational response first
+      await speakText(conversational_response);
+
+      if (is_complete) {
+        setState(STATE.COMPLETE);
+        setStatusText("Interview complete!");
+        setTimeout(() => navigate(`/results/${sessionId}`), 1500);
       } else {
-        // Add next question
-        setCurrentQuestion(response.data.current_question_number);
-        setMessages((prev) => [
-          ...prev,
-          {
-            type: "question",
-            content: response.data.next_question,
-            questionNumber: response.data.current_question_number,
-          },
-        ]);
+        // then speak the next question
+        setCurrentQuestion(current_question_number);
+        setStatusText("Interviewer is speaking...");
+        await speakText(next_question);
+        startListening();
       }
-    } catch (error) {
-      console.error("Failed to submit answer:", error);
-      toast.error("Failed to submit answer. Please try again.");
-      // Remove the last added answer since it failed
-      setMessages((prev) => prev.slice(0, -1));
-      setAnswer(answer.trim());
-    } finally {
-      setIsSubmitting(false);
+    } catch (err) {
+      console.error("Submit error:", err);
+      setStatusText("Something went wrong. Please try again.");
+      setState(STATE.LISTENING);
+      startListening();
     }
   };
 
-  const handleKeyDown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmitAnswer();
+  // kick off interview
+  useEffect(() => {
+    const firstQuestion = location.state?.firstQuestion;
+    if (!firstQuestion) return;
+
+    const go = async () => {
+      await new Promise(r => setTimeout(r, 800));
+      if (window.speechSynthesis.getVoices().length === 0) {
+        await new Promise(r => {
+          window.speechSynthesis.onvoiceschanged = r;
+          setTimeout(r, 2000);
+        });
+      }
+      await speakText(firstQuestion);
+      startListening();
+    };
+
+    go();
+  }, []);
+
+  const toggleCam = () => {
+    if (streamRef.current) {
+      const track = streamRef.current.getVideoTracks()[0];
+      if (track) {
+        track.enabled = !track.enabled;
+        setCamOn(track.enabled);
+      }
     }
   };
 
-  const handleEndSession = () => {
+  const handleEndCall = () => {
+    window.speechSynthesis.cancel();
+    if (recognitionRef.current) recognitionRef.current.stop();
+    if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
     navigate("/");
   };
 
+  const isListening = state === STATE.LISTENING;
+
   return (
-    <div data-testid="interview-page" className="h-screen flex flex-col max-w-4xl mx-auto">
-      {/* Header */}
-      <header className="flex items-center justify-between p-4 border-b border-slate-800">
-        <div>
-          <p className="font-mono text-sm text-emerald-500">{role} Developer</p>
-          <p className="text-xs text-slate-500">{experience}</p>
-        </div>
-        <div className="flex items-center gap-4">
-          <span className="text-sm text-slate-400">
-            Question {currentQuestion}/{totalQuestions}
-          </span>
-          <Button
-            data-testid="end-session-btn"
-            variant="ghost"
-            onClick={handleEndSession}
-            className="btn-ghost"
-          >
-            <LogOut className="w-4 h-4 mr-2" />
-            End Session
-          </Button>
-        </div>
-      </header>
+    <div style={styles.root}>
 
-      {/* Chat Area */}
-      <ScrollArea ref={scrollRef} className="flex-1 p-4" data-testid="chat-area">
-        <div className="space-y-4 pb-4">
-          {messages.map((message, index) => (
-            <div
-              key={index}
-              className={`animate-slide-up ${
-                message.type === "answer" ? "flex justify-end" : ""
-              }`}
-              style={{ animationDelay: `${index * 0.05}s` }}
+      {/* Video grid */}
+      <div style={styles.grid}>
+
+        {/* AI tile */}
+        <div style={styles.tile}>
+          <div style={{
+            ...styles.aiAvatar,
+            boxShadow: isSpeaking
+              ? "0 0 0 3px #fff, 0 0 40px rgba(255,255,255,0.2)"
+              : "0 0 0 1px rgba(255,255,255,0.1)"
+          }}>
+            <svg
+              width="52"
+              height="52"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="rgba(255,255,255,0.6)"
+              strokeWidth="1.2"
+              style={{
+                animation: isSpeaking ? "pulse 1.2s ease-in-out infinite" : "none"
+              }}
             >
-              {message.type === "question" && (
-                <div className="chat-bubble-ai" data-testid={`question-${message.questionNumber}`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-xs font-mono text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded">
-                      Q{message.questionNumber}
-                    </span>
-                  </div>
-                  <p className="text-slate-200 whitespace-pre-wrap">{message.content}</p>
-                </div>
-              )}
-              {message.type === "answer" && (
-                <div className="chat-bubble-user" data-testid={`answer-${index}`}>
-                  <p className="whitespace-pre-wrap">{message.content}</p>
-                </div>
-              )}
-              {message.type === "feedback" && (
-                <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 max-w-[85%]" data-testid={`feedback-${index}`}>
-                  <p className="text-xs font-mono text-slate-400 mb-2">Feedback</p>
-                  <p className="text-slate-300 text-sm whitespace-pre-wrap">{message.content}</p>
-                </div>
-              )}
-            </div>
-          ))}
-
-          {isSubmitting && (
-            <div className="chat-bubble-ai animate-fade-in">
-              <div className="loading-dots">
-                <span></span>
-                <span></span>
-                <span></span>
-              </div>
-            </div>
-          )}
-
-          {isComplete && (
-            <div className="text-center py-8 animate-fade-in">
-              <p className="text-emerald-400 font-mono text-lg mb-2">Interview Complete!</p>
-              <p className="text-slate-400 text-sm">Redirecting to results...</p>
-            </div>
-          )}
-        </div>
-      </ScrollArea>
-
-      {/* Input Area */}
-      {!isComplete && (
-        <div className="p-4 border-t border-slate-800 bg-slate-900/50">
-          <div className="flex gap-3 items-end">
-            <Textarea
-              ref={textareaRef}
-              data-testid="answer-input"
-              value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Type your answer... (Press Enter to submit, Shift+Enter for new line)"
-              disabled={isSubmitting}
-              className="flex-1 bg-slate-950 border-slate-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 resize-none min-h-[60px] max-h-[200px] text-slate-200 placeholder:text-slate-500"
-              rows={2}
-            />
-            <Button
-              data-testid="submit-answer-btn"
-              onClick={handleSubmitAnswer}
-              disabled={isSubmitting || !answer.trim()}
-              className="btn-primary h-[60px] px-6"
-            >
-              {isSubmitting ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                <SendHorizontal className="w-5 h-5" />
-              )}
-            </Button>
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+              <circle cx="12" cy="7" r="4" />
+            </svg>
           </div>
+
+          {/* subtitle what AI is saying */}
+          {subtitleText && (
+            <div style={styles.subtitle}>
+              <p style={styles.subtitleText}>"{subtitleText}"</p>
+            </div>
+          )}
+
+          <div style={styles.tileName}>AI Interviewer · Alex</div>
+          <div style={styles.tileStatus}>{statusText}</div>
         </div>
-      )}
+
+        {/* User tile */}
+        <div style={{
+          ...styles.tile,
+          outline: isListening ? "3px solid #22c55e" : "none",
+          outlineOffset: "-3px",
+        }}>
+          {camOn ? (
+            <video ref={videoRef} autoPlay muted playsInline style={styles.video} />
+          ) : (
+            <div style={styles.camOff}>
+              <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1.2">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                <circle cx="12" cy="7" r="4" />
+              </svg>
+            </div>
+          )}
+          <div style={styles.tileName}>You</div>
+          {isListening && (
+            <div style={styles.listeningBadge}>
+              <span style={styles.micDot} />
+              Listening
+            </div>
+          )}
+          {transcript && (
+            <div style={styles.userSubtitle}>
+              <p style={styles.subtitleText}>{transcript}</p>
+            </div>
+          )}
+        </div>
+
+      </div>
+
+      {/* Progress dots */}
+      <div style={styles.progress}>
+        {Array.from({ length: totalQuestions }).map((_, i) => (
+          <div key={i} style={{
+            ...styles.progressDot,
+            background: i < currentQuestion - 1
+              ? "#22c55e"
+              : i === currentQuestion - 1
+                ? "#fff"
+                : "rgba(255,255,255,0.2)"
+          }} />
+        ))}
+        <span style={styles.progressLabel}>Question {currentQuestion} of {totalQuestions}</span>
+      </div>
+
+      {/* Controls */}
+      <div style={styles.controls}>
+        <button style={styles.ctrlBtn} onClick={toggleCam}>
+          {camOn ? <Video size={20} /> : <VideoOff size={20} />}
+        </button>
+
+        {isListening ? (
+          <button style={{ ...styles.ctrlBtn, ...styles.submitBtn }} onClick={stopAndSubmit}>
+            <MicOff size={20} />
+            <span style={{ marginLeft: 8, fontSize: 14, fontWeight: 600 }}>Done Speaking</span>
+          </button>
+        ) : (
+          <button style={{ ...styles.ctrlBtn, opacity: 0.4, cursor: "not-allowed" }} disabled>
+            <Mic size={20} />
+            <span style={{ marginLeft: 8, fontSize: 13 }}>
+              {state === STATE.SPEAKING ? "Alex is speaking..." : state === STATE.PROCESSING ? "Processing..." : "Please wait..."}
+            </span>
+          </button>
+        )}
+
+        <button style={{ ...styles.ctrlBtn, ...styles.endBtn }} onClick={handleEndCall}>
+          <PhoneOff size={20} />
+        </button>
+      </div>
+
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.15); opacity: 0.6; }
+        }
+      `}</style>
     </div>
   );
 }
+
+const styles = {
+  root: {
+    height: "100vh",
+    background: "#111",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "20px 20px 16px",
+    fontFamily: "system-ui, sans-serif",
+    color: "#fff",
+    overflow: "hidden",
+  },
+  grid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 12,
+    width: "100%",
+    maxWidth: 920,
+    flex: 1,
+    maxHeight: "calc(100vh - 160px)",
+  },
+  tile: {
+    position: "relative",
+    background: "#1e1e1e",
+    borderRadius: 14,
+    overflow: "hidden",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 260,
+  },
+  aiAvatar: {
+    width: 110,
+    height: 110,
+    borderRadius: "50%",
+    background: "#2a2a2a",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    transition: "box-shadow 0.3s ease",
+  },
+  camOff: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100%",
+    height: "100%",
+  },
+  video: {
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+    transform: "scaleX(-1)",
+    borderRadius: 14,
+  },
+  tileName: {
+    position: "absolute",
+    bottom: 12,
+    left: 12,
+    fontSize: 12,
+    fontWeight: 600,
+    color: "rgba(255,255,255,0.8)",
+    background: "rgba(0,0,0,0.55)",
+    padding: "3px 10px",
+    borderRadius: 20,
+  },
+  tileStatus: {
+    position: "absolute",
+    top: 12,
+    left: "50%",
+    transform: "translateX(-50%)",
+    fontSize: 11,
+    color: "rgba(255,255,255,0.5)",
+    background: "rgba(0,0,0,0.5)",
+    padding: "3px 12px",
+    borderRadius: 20,
+    whiteSpace: "nowrap",
+  },
+  subtitle: {
+    position: "absolute",
+    bottom: 44,
+    left: 12,
+    right: 12,
+    background: "rgba(0,0,0,0.6)",
+    borderRadius: 8,
+    padding: "8px 12px",
+  },
+  userSubtitle: {
+    position: "absolute",
+    bottom: 44,
+    left: 12,
+    right: 12,
+    background: "rgba(0,0,0,0.6)",
+    borderRadius: 8,
+    padding: "8px 12px",
+  },
+  subtitleText: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.85)",
+    lineHeight: 1.5,
+    margin: 0,
+  },
+  listeningBadge: {
+    position: "absolute",
+    top: 12,
+    left: "50%",
+    transform: "translateX(-50%)",
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    fontSize: 11,
+    color: "#22c55e",
+    background: "rgba(0,0,0,0.6)",
+    padding: "3px 12px",
+    borderRadius: 20,
+    whiteSpace: "nowrap",
+  },
+  micDot: {
+    width: 7,
+    height: 7,
+    borderRadius: "50%",
+    background: "#22c55e",
+    display: "inline-block",
+    animation: "pulse 1s infinite",
+  },
+  progress: {
+    display: "flex",
+    gap: 8,
+    alignItems: "center",
+    padding: "8px 0",
+  },
+  progressDot: {
+    width: 8,
+    height: 8,
+    borderRadius: "50%",
+    transition: "background 0.3s ease",
+  },
+  progressLabel: {
+    fontSize: 11,
+    color: "rgba(255,255,255,0.3)",
+    marginLeft: 4,
+  },
+  controls: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+  },
+  ctrlBtn: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "12px 20px",
+    borderRadius: 50,
+    border: "none",
+    cursor: "pointer",
+    background: "rgba(255,255,255,0.1)",
+    color: "#fff",
+    transition: "all 0.2s ease",
+  },
+  submitBtn: {
+    background: "#fff",
+    color: "#000",
+    padding: "12px 28px",
+  },
+  endBtn: {
+    background: "rgba(220,38,38,0.2)",
+    color: "#f87171",
+    border: "1px solid rgba(220,38,38,0.3)",
+  },
+};
