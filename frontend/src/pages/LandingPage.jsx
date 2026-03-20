@@ -1,182 +1,455 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { LayoutTemplate, Database, Layers, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
+import { Loader2, Code2, GitBranch, Layout, Users, Brain } from "lucide-react";
 import axios from "axios";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
 const roles = [
-  {
-    id: "Frontend",
-    title: "Frontend",
-    description: "React, Vue, Angular, CSS, JavaScript",
-    icon: LayoutTemplate,
-  },
-  {
-    id: "Backend",
-    title: "Backend",
-    description: "Node.js, Python, Java, Databases, APIs",
-    icon: Database,
-  },
-  {
-    id: "Full Stack",
-    title: "Full Stack",
-    description: "End-to-end development expertise",
-    icon: Layers,
-  },
+  { id: "Frontend", label: "Frontend", desc: "React, Vue, CSS, JS" },
+  { id: "Backend", label: "Backend", desc: "Node.js, Python, APIs, DBs" },
+  { id: "Full Stack", label: "Full Stack", desc: "End-to-end development" },
 ];
 
-const experienceLevels = [
+const experiences = [
   { id: "Fresher", label: "Fresher" },
-  { id: "1-3 years", label: "1-3 years" },
-  { id: "3+ years", label: "3+ years" },
+  { id: "1-3 years", label: "1–3 yrs" },
+  { id: "3+ years", label: "3+ yrs" },
+];
+
+const modes = [
+  {
+    id: "technical",
+    label: "Technical",
+    icon: Code2,
+    desc: "Core concepts, frameworks, practical knowledge",
+    color: "#3b82f6",
+  },
+  {
+    id: "dsa",
+    label: "DSA",
+    icon: GitBranch,
+    desc: "Data structures, algorithms, complexity",
+    color: "#8b5cf6",
+  },
+  {
+    id: "system_design",
+    label: "System Design",
+    icon: Layout,
+    desc: "Scalable systems, architecture decisions",
+    color: "#06b6d4",
+  },
+  {
+    id: "hr",
+    label: "HR Round",
+    icon: Users,
+    desc: "Salary, notice period, culture fit",
+    color: "#10b981",
+  },
+  {
+    id: "behavioral",
+    label: "Behavioral",
+    icon: Brain,
+    desc: "Situation-based STAR questions",
+    color: "#f59e0b",
+  },
 ];
 
 export default function LandingPage() {
   const navigate = useNavigate();
   const [selectedRole, setSelectedRole] = useState(null);
   const [selectedExperience, setSelectedExperience] = useState(null);
+  const [selectedMode, setSelectedMode] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleStartInterview = async () => {
-    if (!selectedRole || !selectedExperience) {
-      toast.error("Please select both role and experience level");
+  const handleStart = async () => {
+    if (!selectedRole || !selectedExperience || !selectedMode) {
+      setError("Please select all three options to continue.");
       return;
     }
 
+    setError("");
     setIsLoading(true);
+
+    // PostHog tracking
+    if (window.posthog) {
+      window.posthog.capture("interview_started", {
+        role: selectedRole,
+        experience: selectedExperience,
+        mode: selectedMode,
+      });
+    }
+
     try {
       const response = await axios.post(`${API}/interview/start`, {
         role: selectedRole,
         experience: selectedExperience,
+        mode: selectedMode,
       });
       navigate(`/interview/${response.data.session_id}`, {
         state: {
           role: response.data.role,
           experience: response.data.experience,
+          mode: response.data.mode,
           firstQuestion: response.data.first_question,
         },
       });
-    } catch (error) {
-      console.error("Failed to start interview:", error);
-      toast.error("Failed to start interview. Please try again.");
+    } catch (err) {
+      console.error("Failed to start:", err);
+      setError("Failed to start interview. Please try again.");
     } finally {
       setIsLoading(false);
     }
   };
 
-  return (
-    <main
-      data-testid="landing-page"
-      className="min-h-screen flex flex-col justify-center items-center relative overflow-hidden px-4 py-12"
-    >
-      {/* Background gradient overlay */}
-      <div className="absolute inset-0 bg-gradient-to-tr from-emerald-500/5 via-transparent to-transparent pointer-events-none" />
-      
-      {/* Background image with low opacity */}
-      <div 
-        className="absolute inset-0 opacity-10 pointer-events-none"
-        style={{
-          backgroundImage: 'url(https://images.unsplash.com/photo-1641749471127-3f76436e8b38?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTN8MHwxfHNlYXJjaHwyfHxhYnN0cmFjdCUyMGRhcmslMjBtaW5pbWFsJTIwdGVjaG5vbG9neSUyMGJhY2tncm91bmQlMjBkaWdpdGFsJTIwbWVzaHxlbnwwfHx8fDE3NzM4MTQ2NDV8MA&ixlib=rb-4.1.0&q=85)',
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-        }}
-      />
+  const canStart = selectedRole && selectedExperience && selectedMode;
 
-      <div className="relative z-10 max-w-4xl mx-auto w-full">
-        {/* Hero Section */}
-        <div className="text-center mb-12 animate-fade-in">
-          <h1 className="font-mono font-bold text-4xl sm:text-5xl lg:text-6xl tracking-tight text-white mb-4">
-            Master Your <span className="text-emerald-500">Tech Interview</span>
-          </h1>
-          <p className="text-slate-400 text-base md:text-lg max-w-xl mx-auto leading-relaxed">
-            AI-powered mock interviews tailored for Indian developers. Practice with real questions and get instant feedback.
-          </p>
+  return (
+    <div style={s.root}>
+
+      {/* Header */}
+      <div style={s.header}>
+        <div style={s.logo}>DP</div>
+        <span style={s.logoText}>DevPrep India</span>
+        <span style={s.badge}>Free · No signup</span>
+      </div>
+
+      {/* Hero */}
+      <div style={s.hero}>
+        <h1 style={s.headline}>
+          Practice interviews.<br />
+          <span style={s.accent}>Get better. Get hired.</span>
+        </h1>
+        <p style={s.subheadline}>
+          AI mock interviews for Indian developers. Instant, free, no signup needed.
+        </p>
+      </div>
+
+      {/* Config */}
+      <div style={s.card}>
+
+        {/* Role */}
+        <div style={s.section}>
+          <p style={s.sectionLabel}>Your Role</p>
+          <div style={s.pillRow}>
+            {roles.map(r => (
+              <button
+                key={r.id}
+                style={{
+                  ...s.pill,
+                  ...(selectedRole === r.id ? s.pillActive : {})
+                }}
+                onClick={() => setSelectedRole(r.id)}
+              >
+                <span style={s.pillLabel}>{r.label}</span>
+                <span style={s.pillDesc}>{r.desc}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Role Selection */}
-        <section className="mb-10 animate-slide-up" style={{ animationDelay: "0.1s" }}>
-          <h2 className="font-mono font-bold text-lg text-slate-300 mb-4 text-left">
-            Select Your Role
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {roles.map((role) => {
-              const Icon = role.icon;
-              const isSelected = selectedRole === role.id;
+        {/* Experience */}
+        <div style={s.section}>
+          <p style={s.sectionLabel}>Experience Level</p>
+          <div style={s.expRow}>
+            {experiences.map(e => (
+              <button
+                key={e.id}
+                style={{
+                  ...s.expPill,
+                  ...(selectedExperience === e.id ? s.expPillActive : {})
+                }}
+                onClick={() => setSelectedExperience(e.id)}
+              >
+                {e.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Mode */}
+        <div style={s.section}>
+          <p style={s.sectionLabel}>Interview Round</p>
+          <div style={s.modeGrid}>
+            {modes.map(m => {
+              const Icon = m.icon;
+              const isSelected = selectedMode === m.id;
               return (
                 <button
-                  key={role.id}
-                  data-testid={`role-card-${role.id.toLowerCase().replace(" ", "-")}`}
-                  onClick={() => setSelectedRole(role.id)}
-                  className={`role-card p-6 rounded-lg text-left transition-all duration-300 ${
-                    isSelected ? "selected" : ""
-                  }`}
+                  key={m.id}
+                  style={{
+                    ...s.modeCard,
+                    ...(isSelected ? {
+                      ...s.modeCardActive,
+                      borderColor: m.color,
+                      boxShadow: `0 0 0 1px ${m.color}`,
+                    } : {})
+                  }}
+                  onClick={() => setSelectedMode(m.id)}
                 >
-                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center mb-4 ${
-                    isSelected ? "bg-emerald-500/20" : "bg-slate-800"
-                  }`}>
-                    <Icon className={`w-6 h-6 ${isSelected ? "text-emerald-400" : "text-slate-400"}`} />
-                  </div>
-                  <h3 className={`font-mono font-bold text-lg mb-2 ${
-                    isSelected ? "text-emerald-400" : "text-white"
-                  }`}>
-                    {role.title}
-                  </h3>
-                  <p className="text-sm text-slate-400">{role.description}</p>
+                  <Icon
+                    size={20}
+                    style={{ color: isSelected ? m.color : "rgba(255,255,255,0.4)", marginBottom: 8 }}
+                  />
+                  <span style={{
+                    ...s.modeLabel,
+                    color: isSelected ? "#fff" : "rgba(255,255,255,0.7)"
+                  }}>
+                    {m.label}
+                  </span>
+                  <span style={s.modeDesc}>{m.desc}</span>
                 </button>
               );
             })}
           </div>
-        </section>
-
-        {/* Experience Selection */}
-        <section className="mb-10 animate-slide-up" style={{ animationDelay: "0.2s" }}>
-          <h2 className="font-mono font-bold text-lg text-slate-300 mb-4 text-left">
-            Experience Level
-          </h2>
-          <div className="experience-toggle inline-flex">
-            {experienceLevels.map((level) => (
-              <button
-                key={level.id}
-                data-testid={`experience-${level.id.toLowerCase().replace(/[ +]/g, "-")}`}
-                onClick={() => setSelectedExperience(level.id)}
-                className={`experience-option ${
-                  selectedExperience === level.id ? "selected" : ""
-                }`}
-              >
-                {level.label}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {/* CTA Button */}
-        <div className="text-center animate-slide-up" style={{ animationDelay: "0.3s" }}>
-          <Button
-            data-testid="start-interview-btn"
-            onClick={handleStartInterview}
-            disabled={isLoading || !selectedRole || !selectedExperience}
-            className="btn-primary px-8 py-6 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isLoading ? (
-              <>
-                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                Starting Interview...
-              </>
-            ) : (
-              "Start Interview"
-            )}
-          </Button>
-          {(!selectedRole || !selectedExperience) && (
-            <p className="text-slate-500 text-sm mt-4">
-              Select a role and experience level to begin
-            </p>
-          )}
         </div>
+
+        {error && <p style={s.error}>{error}</p>}
+
+        <button
+          style={{
+            ...s.startBtn,
+            ...(canStart ? {} : s.startBtnDisabled)
+          }}
+          onClick={handleStart}
+          disabled={isLoading || !canStart}
+        >
+          {isLoading ? (
+            <><Loader2 size={18} style={{ animation: "spin 1s linear infinite", marginRight: 8 }} /> Starting...</>
+          ) : (
+            "Start Interview →"
+          )}
+        </button>
+
+        {!canStart && (
+          <p style={s.hint}>Select role, experience, and round to begin</p>
+        )}
+
       </div>
-    </main>
+
+      <p style={s.footer}>No signup · No payment · Instant start</p>
+
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: #0a0a0a; }
+      `}</style>
+    </div>
   );
 }
+
+const s = {
+  root: {
+    minHeight: "100vh",
+    background: "#0a0a0a",
+    color: "#fff",
+    fontFamily: "system-ui, -apple-system, sans-serif",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    padding: "24px 16px 48px",
+  },
+  header: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 48,
+    width: "100%",
+    maxWidth: 640,
+  },
+  logo: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    background: "#fff",
+    color: "#000",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 12,
+    fontWeight: 800,
+    letterSpacing: "-0.05em",
+  },
+  logoText: {
+    fontSize: 15,
+    fontWeight: 600,
+    color: "#fff",
+    flex: 1,
+  },
+  badge: {
+    fontSize: 11,
+    color: "rgba(255,255,255,0.4)",
+    border: "1px solid rgba(255,255,255,0.1)",
+    padding: "3px 10px",
+    borderRadius: 20,
+  },
+  hero: {
+    textAlign: "center",
+    marginBottom: 40,
+    maxWidth: 520,
+  },
+  headline: {
+    fontSize: "clamp(2rem, 6vw, 2.8rem)",
+    fontWeight: 800,
+    lineHeight: 1.15,
+    letterSpacing: "-0.04em",
+    marginBottom: 14,
+  },
+  accent: {
+    color: "rgba(255,255,255,0.5)",
+  },
+  subheadline: {
+    fontSize: 15,
+    color: "rgba(255,255,255,0.5)",
+    lineHeight: 1.6,
+  },
+  card: {
+    width: "100%",
+    maxWidth: 640,
+    background: "#111",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: 20,
+    padding: 28,
+    display: "flex",
+    flexDirection: "column",
+    gap: 28,
+  },
+  section: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 12,
+  },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: 600,
+    letterSpacing: "0.1em",
+    textTransform: "uppercase",
+    color: "rgba(255,255,255,0.35)",
+  },
+  pillRow: {
+    display: "flex",
+    gap: 10,
+    flexWrap: "wrap",
+  },
+  pill: {
+    flex: 1,
+    minWidth: 140,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    padding: "12px 14px",
+    background: "rgba(255,255,255,0.04)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: 12,
+    cursor: "pointer",
+    color: "#fff",
+    transition: "all 0.15s ease",
+    textAlign: "left",
+  },
+  pillActive: {
+    background: "rgba(255,255,255,0.1)",
+    border: "1px solid rgba(255,255,255,0.3)",
+  },
+  pillLabel: {
+    fontSize: 14,
+    fontWeight: 600,
+    marginBottom: 3,
+    color: "#fff",
+  },
+  pillDesc: {
+    fontSize: 11,
+    color: "rgba(255,255,255,0.4)",
+  },
+  expRow: {
+    display: "flex",
+    gap: 8,
+  },
+  expPill: {
+    flex: 1,
+    padding: "10px 0",
+    background: "rgba(255,255,255,0.04)",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: 10,
+    cursor: "pointer",
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 13,
+    fontWeight: 500,
+    transition: "all 0.15s ease",
+  },
+  expPillActive: {
+    background: "rgba(255,255,255,0.1)",
+    border: "1px solid rgba(255,255,255,0.3)",
+    color: "#fff",
+  },
+  modeGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))",
+    gap: 10,
+  },
+  modeCard: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    padding: "14px 12px",
+    background: "rgba(255,255,255,0.03)",
+    border: "1px solid rgba(255,255,255,0.07)",
+    borderRadius: 12,
+    cursor: "pointer",
+    color: "#fff",
+    transition: "all 0.15s ease",
+    textAlign: "left",
+  },
+  modeCardActive: {
+    background: "rgba(255,255,255,0.06)",
+  },
+  modeLabel: {
+    fontSize: 13,
+    fontWeight: 600,
+    marginBottom: 4,
+  },
+  modeDesc: {
+    fontSize: 10,
+    color: "rgba(255,255,255,0.35)",
+    lineHeight: 1.4,
+  },
+  startBtn: {
+    width: "100%",
+    padding: "16px",
+    background: "#fff",
+    color: "#000",
+    border: "none",
+    borderRadius: 12,
+    fontSize: 15,
+    fontWeight: 700,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    transition: "opacity 0.15s ease",
+  },
+  startBtnDisabled: {
+    opacity: 0.3,
+    cursor: "not-allowed",
+  },
+  error: {
+    fontSize: 12,
+    color: "#f87171",
+    textAlign: "center",
+  },
+  hint: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.25)",
+    textAlign: "center",
+    marginTop: -16,
+  },
+  footer: {
+    marginTop: 24,
+    fontSize: 12,
+    color: "rgba(255,255,255,0.2)",
+  },
+};

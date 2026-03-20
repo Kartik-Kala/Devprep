@@ -19,14 +19,18 @@ groq_client = Groq(api_key=os.environ.get('GROQ_API_KEY'))
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
+# ─── Models ───────────────────────────────────────────────────────────────────
+
 class StartInterviewRequest(BaseModel):
     role: str
     experience: str
+    mode: str  # technical, dsa, system_design, hr, behavioral
 
 class StartInterviewResponse(BaseModel):
     session_id: str
     role: str
     experience: str
+    mode: str
     first_question: str
 
 class AnswerRequest(BaseModel):
@@ -34,7 +38,7 @@ class AnswerRequest(BaseModel):
     answer: str
 
 class AnswerResponse(BaseModel):
-    conversational_response: str  # what AI says in response to answer
+    conversational_response: str
     next_question: Optional[str] = None
     is_complete: bool
     current_question_number: int
@@ -45,42 +49,80 @@ class ResultsResponse(BaseModel):
     session_id: str
     role: str
     experience: str
+    mode: str
     overall_score: int
     questions: List[dict]
     summary: str
 
-def get_system_prompt(role: str, experience: str) -> str:
-    return f"""You are Alex, a friendly but rigorous technical interviewer at a top Indian tech company. You are interviewing a {role} developer with {experience} experience.
+# ─── Mode configs ─────────────────────────────────────────────────────────────
+
+MODE_CONFIG = {
+    "technical": {
+        "label": "Technical",
+        "description": "Core technical concepts, frameworks, and practical coding knowledge",
+        "question_focus": "Ask about technical concepts, debugging, architecture decisions, and practical implementation knowledge relevant to their role",
+        "total_questions": 5,
+    },
+    "dsa": {
+        "label": "DSA",
+        "description": "Data structures, algorithms, and problem-solving",
+        "question_focus": "Ask about data structures (arrays, linked lists, trees, graphs, hashmaps), algorithms (sorting, searching, dynamic programming), time/space complexity, and problem-solving approaches. Ask them to explain their approach verbally — no coding needed.",
+        "total_questions": 5,
+    },
+    "system_design": {
+        "label": "System Design",
+        "description": "Designing scalable systems and architecture",
+        "question_focus": "Ask about designing real-world systems (URL shortener, chat app, ride sharing, etc.), scalability, databases, caching, load balancing, microservices. Ask them to walk through their design decisions.",
+        "total_questions": 4,
+    },
+    "hr": {
+        "label": "HR Round",
+        "description": "HR and culture fit questions",
+        "question_focus": "Ask standard HR questions: why do you want to join, where do you see yourself in 5 years, salary expectations, notice period, strengths and weaknesses, why are you leaving your current role. Keep it conversational.",
+        "total_questions": 5,
+    },
+    "behavioral": {
+        "label": "Behavioral",
+        "description": "Situation-based behavioral questions",
+        "question_focus": "Ask STAR-format behavioral questions: tell me about a time you handled a conflict, a time you failed and what you learned, a time you had to work under pressure, a time you showed leadership, a time you had to learn something quickly. Probe for specific examples.",
+        "total_questions": 5,
+    },
+}
+
+# ─── Prompts ──────────────────────────────────────────────────────────────────
+
+def get_system_prompt(role: str, experience: str, mode: str) -> str:
+    config = MODE_CONFIG.get(mode, MODE_CONFIG["technical"])
+    return f"""You are Alex, a friendly but rigorous interviewer conducting a {config['label']} interview round for a {role} developer with {experience} experience.
+
+This round focuses on: {config['description']}
 
 Your personality:
 - Warm and professional, like a real interviewer
-- You acknowledge good answers genuinely
-- You gently push back on incomplete answers
+- You acknowledge good answers genuinely and specifically
+- You gently push back on vague or incomplete answers
 - You make the candidate feel comfortable but challenged
-- You speak naturally, not like a robot
+- You speak naturally, conversationally — not like a robot
 
-Your job:
-- Ask relevant technical questions for {role} development at {experience} level
-- Respond conversationally to answers before moving on
-- Give a score out of 10 mentally for each answer"""
+Question focus: {config['question_focus']}"""
 
-def get_first_question_prompt(role: str, experience: str) -> str:
-    return f"""Start the interview with a warm intro and your first technical question.
+def get_first_question_prompt(role: str, experience: str, mode: str) -> str:
+    config = MODE_CONFIG.get(mode, MODE_CONFIG["technical"])
+    return f"""Start a {config['label']} interview for a {role} developer ({experience} level).
 
-Format exactly like this:
-QUESTION: [your first technical question for a {role} developer at {experience} level]
+Give a brief warm welcome (1 sentence) then ask your first question.
 
-Just the question, no intro text before QUESTION:"""
+Format:
+INTRO: [one warm sentence welcoming them]
+QUESTION: [your first question]"""
 
 def get_conversational_response_prompt(
-    role: str,
-    experience: str,
-    question: str,
-    answer: str,
-    question_number: int,
-    total: int,
+    role: str, experience: str, mode: str,
+    question: str, answer: str,
+    question_number: int, total: int,
     previous_qa: List[dict]
 ) -> str:
+    config = MODE_CONFIG.get(mode, MODE_CONFIG["technical"])
     history = ""
     if previous_qa:
         history = "\nPrevious Q&A:\n"
@@ -89,33 +131,36 @@ def get_conversational_response_prompt(
 
     is_last = question_number >= total
 
-    return f"""You are Alex, interviewing a {role} developer ({experience} level). 
+    return f"""You are Alex conducting a {config['label']} interview for a {role} developer ({experience} level).
 {history}
 Current question: {question}
 Candidate's answer: {answer}
 
-{"This is the LAST question. After responding, wrap up the interview warmly." if is_last else f"This is question {question_number} of {total}."}
+{"This is the LAST question. After responding, wrap up warmly and wish them luck." if is_last else f"This is question {question_number} of {total}."}
 
-Respond naturally like a real interviewer. Your response must have two parts:
+Respond like a real interviewer. Be specific about what they said — don't be generic.
 
-RESPONSE: [2-3 sentences acknowledging their answer. Be specific about what they said. If good, say what you liked. If incomplete or wrong, gently point out what was missing. Sound human and conversational.]
+RESPONSE: [2-3 sentences acknowledging their answer. Reference something specific they said. If good, say what you liked. If incomplete, gently note what was missing.]
 
-{"DONE" if is_last else "NEXT_QUESTION: [Ask a different technical question on a new topic, appropriate for " + role + " at " + experience + " level. Just the question itself.]"}
+{"DONE" if is_last else f"NEXT_QUESTION: [Ask a new {config['label']} question on a different topic. Keep focus on: {config['question_focus']}]"}
 
-SCORE: [number 1-10 based on their answer quality]"""
+SCORE: [1-10 based on answer quality]"""
 
-def get_summary_prompt(role: str, experience: str, qa_list: List[dict], overall_score: int) -> str:
+def get_summary_prompt(role: str, experience: str, mode: str, qa_list: List[dict], overall_score: int) -> str:
+    config = MODE_CONFIG.get(mode, MODE_CONFIG["technical"])
     qa_text = "\n".join([
         f"Q{i+1}: {q['question']}\nAnswer: {q['answer']}\nScore: {q['score']}/10"
         for i, q in enumerate(qa_list) if q.get('answer')
     ])
-    return f"""You interviewed a {role} developer ({experience} level). Here's the full interview:
+    return f"""You interviewed a {role} developer ({experience} level) for a {config['label']} round.
 
 {qa_text}
 
 Overall Score: {overall_score}/10
 
-Write a 3-4 sentence honest summary: what they did well, what needs improvement, and one specific recommendation for their preparation. Be direct but encouraging."""
+Write a 3-4 sentence honest summary: what they did well, what needs improvement, and one specific recommendation. Be direct but encouraging. End with one actionable tip."""
+
+# ─── Routes ───────────────────────────────────────────────────────────────────
 
 @api_router.get("/")
 async def root():
@@ -124,23 +169,32 @@ async def root():
 @api_router.post("/interview/start", response_model=StartInterviewResponse)
 async def start_interview(request: StartInterviewRequest):
     session_id = str(uuid.uuid4())
+    config = MODE_CONFIG.get(request.mode, MODE_CONFIG["technical"])
 
     try:
         completion = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
-                {"role": "system", "content": get_system_prompt(request.role, request.experience)},
-                {"role": "user", "content": get_first_question_prompt(request.role, request.experience)}
+                {"role": "system", "content": get_system_prompt(request.role, request.experience, request.mode)},
+                {"role": "user", "content": get_first_question_prompt(request.role, request.experience, request.mode)}
             ],
             temperature=0.7,
-            max_tokens=300
+            max_tokens=400
         )
         raw = completion.choices[0].message.content.strip()
 
-        # extract question
+        intro = ""
         first_question = raw
-        if "QUESTION:" in raw:
+        if "INTRO:" in raw and "QUESTION:" in raw:
+            intro_part = raw.split("QUESTION:")[0].replace("INTRO:", "").strip()
+            question_part = raw.split("QUESTION:")[-1].strip()
+            intro = intro_part
+            first_question = question_part
+        elif "QUESTION:" in raw:
             first_question = raw.split("QUESTION:")[-1].strip()
+
+        # combine intro + question for TTS
+        full_opening = f"{intro} {first_question}".strip() if intro else first_question
 
     except Exception as e:
         logging.error(f"Groq error: {e}")
@@ -150,9 +204,10 @@ async def start_interview(request: StartInterviewRequest):
         "session_id": session_id,
         "role": request.role,
         "experience": request.experience,
+        "mode": request.mode,
         "questions": [{"question": first_question, "answer": None, "feedback": None, "score": None}],
         "current_question": 1,
-        "total_questions": 5,
+        "total_questions": config["total_questions"],
         "is_complete": False,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
@@ -161,13 +216,13 @@ async def start_interview(request: StartInterviewRequest):
         session_id=session_id,
         role=request.role,
         experience=request.experience,
-        first_question=first_question
+        mode=request.mode,
+        first_question=full_opening
     )
 
 @api_router.post("/interview/answer", response_model=AnswerResponse)
 async def submit_answer(request: AnswerRequest):
     session = sessions.get(request.session_id)
-
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     if session["is_complete"]:
@@ -181,14 +236,11 @@ async def submit_answer(request: AnswerRequest):
         completion = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
-                {"role": "system", "content": get_system_prompt(session["role"], session["experience"])},
+                {"role": "system", "content": get_system_prompt(session["role"], session["experience"], session["mode"])},
                 {"role": "user", "content": get_conversational_response_prompt(
-                    session["role"],
-                    session["experience"],
-                    current_question,
-                    request.answer,
-                    session["current_question"],
-                    session["total_questions"],
+                    session["role"], session["experience"], session["mode"],
+                    current_question, request.answer,
+                    session["current_question"], session["total_questions"],
                     previous_qa
                 )}
             ],
@@ -197,19 +249,16 @@ async def submit_answer(request: AnswerRequest):
         )
         raw = completion.choices[0].message.content.strip()
 
-        # parse response
         conversational_response = ""
         next_question = None
         score = 5
 
         if "RESPONSE:" in raw:
-            parts = raw.split("RESPONSE:")
-            after_response = parts[1]
-
-            if "NEXT_QUESTION:" in after_response:
-                resp_parts = after_response.split("NEXT_QUESTION:")
-                conversational_response = resp_parts[0].strip()
-                rest = resp_parts[1]
+            after = raw.split("RESPONSE:")[1]
+            if "NEXT_QUESTION:" in after:
+                parts = after.split("NEXT_QUESTION:")
+                conversational_response = parts[0].strip()
+                rest = parts[1]
                 if "SCORE:" in rest:
                     q_parts = rest.split("SCORE:")
                     next_question = q_parts[0].strip()
@@ -219,23 +268,23 @@ async def submit_answer(request: AnswerRequest):
                         score = 5
                 else:
                     next_question = rest.strip()
-            elif "DONE" in after_response:
-                if "SCORE:" in after_response:
-                    resp_parts = after_response.split("SCORE:")
-                    conversational_response = resp_parts[0].replace("DONE", "").strip()
+            elif "DONE" in after:
+                if "SCORE:" in after:
+                    parts = after.split("SCORE:")
+                    conversational_response = parts[0].replace("DONE", "").strip()
                     try:
-                        score = int(resp_parts[1].strip().split()[0])
+                        score = int(parts[1].strip().split()[0])
                     except:
                         score = 5
                 else:
-                    conversational_response = after_response.replace("DONE", "").strip()
+                    conversational_response = after.replace("DONE", "").strip()
             else:
-                conversational_response = after_response.strip()
+                conversational_response = after.strip()
         else:
             conversational_response = raw
 
         if not conversational_response:
-            conversational_response = "Thanks for that answer. Let me ask you the next question."
+            conversational_response = "Thanks for that answer. Moving on."
 
     except Exception as e:
         logging.error(f"Groq error: {e}")
@@ -243,7 +292,6 @@ async def submit_answer(request: AnswerRequest):
         next_question = None
         score = 5
 
-    # update session
     session["questions"][current_q_index]["answer"] = request.answer
     session["questions"][current_q_index]["feedback"] = conversational_response
     session["questions"][current_q_index]["score"] = score
@@ -273,7 +321,6 @@ async def submit_answer(request: AnswerRequest):
 @api_router.get("/interview/results/{session_id}", response_model=ResultsResponse)
 async def get_results(session_id: str):
     session = sessions.get(session_id)
-
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
@@ -284,25 +331,24 @@ async def get_results(session_id: str):
         summary = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
-                {"role": "system", "content": "You are a career coach."},
+                {"role": "system", "content": "You are a career coach giving honest interview feedback."},
                 {"role": "user", "content": get_summary_prompt(
-                    session["role"],
-                    session["experience"],
-                    session["questions"],
-                    overall_score
+                    session["role"], session["experience"], session["mode"],
+                    session["questions"], overall_score
                 )}
             ],
             temperature=0.6,
-            max_tokens=200
+            max_tokens=220
         ).choices[0].message.content.strip()
     except Exception as e:
         logging.error(f"Groq error: {e}")
-        summary = f"You scored {overall_score}/10 overall. Keep practicing!"
+        summary = f"You scored {overall_score}/10. Keep practicing!"
 
     return ResultsResponse(
         session_id=session_id,
         role=session["role"],
         experience=session["experience"],
+        mode=session.get("mode", "technical"),
         overall_score=overall_score,
         questions=session["questions"],
         summary=summary
