@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
-import { Mic, MicOff, PhoneOff, Video, VideoOff } from "lucide-react";
+import { Mic, MicOff, PhoneOff, Video, VideoOff, AlertCircle } from "lucide-react";
 import axios from "axios";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -11,6 +11,7 @@ const STATE = {
   SPEAKING: "speaking",
   LISTENING: "listening",
   PROCESSING: "processing",
+  ERROR: "error",
   COMPLETE: "complete",
 };
 
@@ -22,7 +23,6 @@ const MODE_TOTAL_QUESTIONS = {
   behavioral: 5,
 };
 
-// truncate long text for subtitle display
 const truncate = (text, maxLen = 120) => {
   if (!text) return "";
   return text.length > maxLen ? text.slice(0, maxLen) + "..." : text;
@@ -35,6 +35,8 @@ export default function InterviewPage() {
 
   const mode = location.state?.mode || "technical";
   const totalQuestions = MODE_TOTAL_QUESTIONS[mode] || 5;
+  const role = location.state?.role || "Developer";
+  const experience = location.state?.experience || "Fresher";
 
   const [state, setState] = useState(STATE.CONNECTING);
   const [currentQuestion, setCurrentQuestion] = useState(1);
@@ -43,14 +45,12 @@ export default function InterviewPage() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [camOn, setCamOn] = useState(true);
   const [subtitleText, setSubtitleText] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
 
   const recognitionRef = useRef(null);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const pendingAnswerRef = useRef("");
-
-  const role = location.state?.role || "Developer";
-  const experience = location.state?.experience || "Fresher";
 
   // start camera
   useEffect(() => {
@@ -117,6 +117,12 @@ export default function InterviewPage() {
 
   // start mic
   const startListening = () => {
+    // stop any existing recognition first
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       setStatusText("Speech recognition not supported. Use Safari or Chrome.");
@@ -133,6 +139,7 @@ export default function InterviewPage() {
       setStatusText("Listening... speak your answer");
       setTranscript("");
       pendingAnswerRef.current = "";
+      setErrorMsg("");
     };
 
     recognition.onresult = (event) => {
@@ -174,13 +181,14 @@ export default function InterviewPage() {
     pendingAnswerRef.current = "";
     setTranscript("");
     setState(STATE.PROCESSING);
-    setStatusText("Processing...");
+    setStatusText("Processing your answer...");
+    setErrorMsg("");
 
     try {
       const response = await axios.post(`${API}/interview/answer`, {
         session_id: sessionId,
         answer,
-      });
+      }, { timeout: 30000 });
 
       const { conversational_response, next_question, is_complete, current_question_number } = response.data;
 
@@ -198,9 +206,22 @@ export default function InterviewPage() {
       }
     } catch (err) {
       console.error("Submit error:", err);
-      setStatusText("Something went wrong. Please try again.");
+
+      let msg = "Something went wrong. Please try again.";
+      if (err.response?.status === 404) {
+        msg = "Session expired. Please start a new interview.";
+        setState(STATE.ERROR);
+        setErrorMsg(msg);
+        setStatusText(msg);
+        return;
+      } else if (err.code === "ECONNABORTED" || err.message?.includes("timeout")) {
+        msg = "Request timed out. The server may be waking up — please try again.";
+      }
+
+      setErrorMsg(msg);
+      setStatusText(msg);
       setState(STATE.LISTENING);
-      startListening();
+      setTimeout(() => startListening(), 2000);
     }
   };
 
@@ -242,6 +263,7 @@ export default function InterviewPage() {
   };
 
   const isListening = state === STATE.LISTENING;
+  const isError = state === STATE.ERROR;
 
   return (
     <div style={styles.root}>
@@ -258,15 +280,9 @@ export default function InterviewPage() {
               : "0 0 0 1px rgba(255,255,255,0.1)"
           }}>
             <svg
-              width="52"
-              height="52"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="rgba(255,255,255,0.6)"
-              strokeWidth="1.2"
-              style={{
-                animation: isSpeaking ? "pulse 1.2s ease-in-out infinite" : "none"
-              }}
+              width="52" height="52" viewBox="0 0 24 24"
+              fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="1.2"
+              style={{ animation: isSpeaking ? "pulse 1.2s ease-in-out infinite" : "none" }}
             >
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
               <circle cx="12" cy="7" r="4" />
@@ -286,7 +302,7 @@ export default function InterviewPage() {
         {/* User tile */}
         <div style={{
           ...styles.tile,
-          outline: isListening ? "3px solid #22c55e" : "none",
+          outline: isListening ? "3px solid #22c55e" : isError ? "3px solid #ef4444" : "none",
           outlineOffset: "-3px",
         }}>
           {camOn ? (
@@ -314,6 +330,19 @@ export default function InterviewPage() {
         </div>
 
       </div>
+
+      {/* Error banner */}
+      {errorMsg && (
+        <div style={styles.errorBanner}>
+          <AlertCircle size={14} />
+          <span>{errorMsg}</span>
+          {isError && (
+            <button style={styles.errorBtn} onClick={() => navigate("/")}>
+              Start New Interview
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Progress dots */}
       <div style={styles.progress}>
@@ -345,7 +374,9 @@ export default function InterviewPage() {
           <button style={{ ...styles.ctrlBtn, opacity: 0.4, cursor: "not-allowed" }} disabled>
             <Mic size={20} />
             <span style={{ marginLeft: 8, fontSize: 13 }}>
-              {state === STATE.SPEAKING ? "Alex is speaking..." : state === STATE.PROCESSING ? "Processing..." : "Please wait..."}
+              {state === STATE.SPEAKING ? "Alex is speaking..." :
+               state === STATE.PROCESSING ? "Processing..." :
+               state === STATE.ERROR ? "Session expired" : "Please wait..."}
             </span>
           </button>
         )}
@@ -490,6 +521,30 @@ const styles = {
     background: "#22c55e",
     display: "inline-block",
     animation: "pulse 1s infinite",
+  },
+  errorBanner: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    background: "rgba(239,68,68,0.15)",
+    border: "1px solid rgba(239,68,68,0.3)",
+    borderRadius: 8,
+    padding: "8px 16px",
+    fontSize: 12,
+    color: "#f87171",
+    maxWidth: 920,
+    width: "100%",
+  },
+  errorBtn: {
+    marginLeft: "auto",
+    background: "#ef4444",
+    color: "#fff",
+    border: "none",
+    borderRadius: 6,
+    padding: "4px 12px",
+    fontSize: 11,
+    fontWeight: 600,
+    cursor: "pointer",
   },
   progress: {
     display: "flex",

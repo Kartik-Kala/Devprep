@@ -1,8 +1,9 @@
 import re
+import json
+import os
 from fastapi import FastAPI, APIRouter, HTTPException
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel
@@ -14,11 +15,40 @@ from groq import Groq
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-sessions = {}
 groq_client = Groq(api_key=os.environ.get('GROQ_API_KEY'))
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
+
+# ─── File-based session store ─────────────────────────────────────────────────
+# Sessions are saved to disk so they survive server restarts on Render free tier
+
+SESSIONS_FILE = ROOT_DIR / "sessions.json"
+
+def load_sessions() -> dict:
+    try:
+        if SESSIONS_FILE.exists():
+            with open(SESSIONS_FILE, "r") as f:
+                return json.load(f)
+    except Exception as e:
+        logging.error(f"Failed to load sessions: {e}")
+    return {}
+
+def save_sessions(sessions: dict):
+    try:
+        with open(SESSIONS_FILE, "w") as f:
+            json.dump(sessions, f)
+    except Exception as e:
+        logging.error(f"Failed to save sessions: {e}")
+
+def get_session(session_id: str) -> Optional[dict]:
+    sessions = load_sessions()
+    return sessions.get(session_id)
+
+def set_session(session_id: str, data: dict):
+    sessions = load_sessions()
+    sessions[session_id] = data
+    save_sessions(sessions)
 
 # ─── Models ───────────────────────────────────────────────────────────────────
 
@@ -93,7 +123,6 @@ MODE_CONFIG = {
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def clean_response(text: str) -> str:
-    """Remove any leaked format tags from AI response."""
     text = re.sub(r'NEXT_QUESTION:.*', '', text, flags=re.DOTALL)
     text = re.sub(r'SCORE:\s*\d+.*', '', text, flags=re.DOTALL)
     text = re.sub(r'\bDONE\b.*', '', text, flags=re.DOTALL)
@@ -101,7 +130,6 @@ def clean_response(text: str) -> str:
     return text.strip()
 
 def clean_question(text: str) -> str:
-    """Remove any leaked format tags from question."""
     text = re.sub(r'SCORE:\s*\d+.*', '', text, flags=re.DOTALL)
     text = re.sub(r'RESPONSE:.*', '', text, flags=re.DOTALL)
     text = re.sub(r'\bDONE\b.*', '', text, flags=re.DOTALL)
@@ -211,7 +239,7 @@ async def start_interview(request: StartInterviewRequest):
         logging.error(f"Groq error: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate question")
 
-    sessions[session_id] = {
+    session_data = {
         "session_id": session_id,
         "role": request.role,
         "experience": request.experience,
@@ -223,6 +251,8 @@ async def start_interview(request: StartInterviewRequest):
         "created_at": datetime.now(timezone.utc).isoformat()
     }
 
+    set_session(session_id, session_data)
+
     return StartInterviewResponse(
         session_id=session_id,
         role=request.role,
@@ -233,7 +263,7 @@ async def start_interview(request: StartInterviewRequest):
 
 @api_router.post("/interview/answer", response_model=AnswerResponse)
 async def submit_answer(request: AnswerRequest):
-    session = sessions.get(request.session_id)
+    session = get_session(request.session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     if session["is_complete"]:
@@ -320,6 +350,8 @@ async def submit_answer(request: AnswerRequest):
     session["current_question"] += 1
     session["is_complete"] = is_complete
 
+    set_session(request.session_id, session)
+
     return AnswerResponse(
         conversational_response=conversational_response,
         next_question=next_question if not is_complete else None,
@@ -331,7 +363,7 @@ async def submit_answer(request: AnswerRequest):
 
 @api_router.get("/interview/results/{session_id}", response_model=ResultsResponse)
 async def get_results(session_id: str):
-    session = sessions.get(session_id)
+    session = get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
