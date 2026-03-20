@@ -1,94 +1,114 @@
 # DevPrep India
 
-AI-powered mock interview tool for Indian developers. Practice technical interviews with real questions tailored to your role and experience level, and get instant feedback.
+AI-powered mock interviews for Indian developers and founders. Hop in, practice, get real feedback. No signup, no payment, instant start.
 
-![DevPrep India](https://img.shields.io/badge/Built%20with-React%20%2B%20FastAPI-emerald)
+![Live](https://img.shields.io/badge/Live-devprepindia-emerald) ![Built with](https://img.shields.io/badge/Built%20with-React%20%2B%20FastAPI-blue) ![AI](https://img.shields.io/badge/AI-Groq%20%2B%20Llama%203.3-orange)
 
-## Features
+---
 
-- Pick your role: Frontend, Backend, or Full Stack
-- Pick your experience level: Fresher, 1-3 years, or 3+ years
-- 5-question AI-powered interview session
-- Real-time feedback after each answer with a score out of 10
-- Final results screen with overall score and detailed breakdown
-- No login required, no database needed
+## What it does
+
+DevPrep India runs a real voice interview with an AI interviewer. It asks questions out loud, listens to your spoken answers, responds conversationally, and gives you a score and detailed feedback at the end.
+
+Six interview modes:
+
+| Mode | What it covers |
+|---|---|
+| **Technical** | Core concepts, debugging, architecture, frameworks |
+| **DSA** | Data structures, algorithms, complexity — explained verbally |
+| **System Design** | Real-world systems at Indian startup scale |
+| **HR Round** | Culture fit, salary, career goals, notice period |
+| **Behavioral** | STAR-format situational questions |
+| **Investor Pitch** | Practice your startup pitch with an AI VC |
+
+---
 
 ## Tech Stack
 
-**Frontend:** React, Tailwind CSS, shadcn/ui  
+**Frontend:** React, Tailwind CSS, shadcn/ui, Web Speech API  
 **Backend:** Python, FastAPI  
-**AI:** Groq API (llama-3.3-70b-versatile)
+**AI:** Groq API (llama-3.3-70b-versatile)  
+**Voice:** Browser TTS (Web Speech Synthesis)  
+**Analytics:** PostHog  
+**Deploy:** Vercel (frontend) + Render (backend)
 
-## Getting Started
+---
+
+## Running locally
 
 ### Prerequisites
 
 - Node.js 18+
 - Python 3.9+
-- Groq API key (free at [console.groq.com](https://console.groq.com))
+- Groq API key — free at [console.groq.com](https://console.groq.com)
 
-### Backend Setup
+### Backend
 
 ```bash
 cd backend
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Create .env file
-echo "GROQ_API_KEY=your_groq_api_key_here" > .env
-
-# Start the server
-uvicorn server:app --reload --port 8001
+pip3 install -r requirements.txt
+echo "GROQ_API_KEY=your_key_here" > .env
+python3 -m uvicorn server:app --reload --port 8001
 ```
 
-### Frontend Setup
+### Frontend
 
 ```bash
 cd frontend
-
-# Install dependencies
-npm install
-
-# Create .env file
+npm install --legacy-peer-deps
 echo "REACT_APP_BACKEND_URL=http://localhost:8001" > .env
-
-# Start the app
 npm start
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to use the app.
+Open [http://localhost:3000](http://localhost:3000).
 
-## Project Structure
+> **Note:** Voice features work best on Safari. Chrome requires a user interaction before speech synthesis activates.
+
+---
+
+## How it works
+
+```
+User speaks answer
+      ↓
+Web Speech API transcribes to text
+      ↓
+FastAPI backend sends to Groq (llama-3.3-70b)
+      ↓
+AI generates conversational response + next question + score
+      ↓
+Browser TTS speaks the response out loud
+      ↓
+Repeat for 5-6 questions
+      ↓
+Results page with score breakdown, feedback, and shareable score card
+```
+
+Sessions are persisted to disk so they survive server restarts.
+
+---
+
+## Project structure
 
 ```
 devprep/
 ├── backend/
-│   ├── server.py          # FastAPI backend with Groq integration
-│   ├── requirements.txt   # Python dependencies
-│   └── .env               # GROQ_API_KEY (not committed)
+│   ├── server.py          # FastAPI — sessions, Groq integration, all routes
+│   ├── requirements.txt
+│   ├── sessions.json      # Auto-generated, not committed
+│   └── .env               # GROQ_API_KEY
 └── frontend/
+    ├── public/
+    │   └── index.html     # PostHog analytics
     ├── src/
-    │   ├── pages/
-    │   │   ├── LandingPage.jsx    # Role and experience selection
-    │   │   ├── InterviewPage.jsx  # Chat-style interview interface
-    │   │   └── ResultsPage.jsx    # Score and feedback breakdown
-    │   └── components/ui/        # shadcn/ui components
-    └── .env                      # REACT_APP_BACKEND_URL (not committed)
+    │   └── pages/
+    │       ├── LandingPage.jsx    # Mode, role, experience selection
+    │       ├── InterviewPage.jsx  # Google Meet style interview UI
+    │       └── ResultsPage.jsx    # Score, feedback, share card
+    └── .env               # REACT_APP_BACKEND_URL
 ```
 
-## How It Works
-
-1. User selects their role and experience level on the landing page
-2. Backend calls Groq API to generate the first question
-3. User types their answer in the chat interface
-4. Backend evaluates the answer and generates the next question
-5. After 5 questions, user is redirected to the results page
-6. Results show overall score, per-question feedback, and an AI-generated summary
+---
 
 ## License
 
