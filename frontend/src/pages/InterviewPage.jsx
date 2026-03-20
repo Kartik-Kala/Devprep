@@ -14,10 +14,27 @@ const STATE = {
   COMPLETE: "complete",
 };
 
+const MODE_TOTAL_QUESTIONS = {
+  technical: 5,
+  dsa: 5,
+  system_design: 4,
+  hr: 5,
+  behavioral: 5,
+};
+
+// truncate long text for subtitle display
+const truncate = (text, maxLen = 120) => {
+  if (!text) return "";
+  return text.length > maxLen ? text.slice(0, maxLen) + "..." : text;
+};
+
 export default function InterviewPage() {
   const { sessionId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
+
+  const mode = location.state?.mode || "technical";
+  const totalQuestions = MODE_TOTAL_QUESTIONS[mode] || 5;
 
   const [state, setState] = useState(STATE.CONNECTING);
   const [currentQuestion, setCurrentQuestion] = useState(1);
@@ -34,7 +51,6 @@ export default function InterviewPage() {
 
   const role = location.state?.role || "Developer";
   const experience = location.state?.experience || "Fresher";
-  const totalQuestions = 5;
 
   // start camera
   useEffect(() => {
@@ -79,7 +95,8 @@ export default function InterviewPage() {
       utterance.onstart = () => {
         setState(STATE.SPEAKING);
         setIsSpeaking(true);
-        setSubtitleText(text);
+        setSubtitleText(truncate(text));
+        setStatusText("Alex is speaking...");
       };
 
       utterance.onend = () => {
@@ -167,7 +184,6 @@ export default function InterviewPage() {
 
       const { conversational_response, next_question, is_complete, current_question_number } = response.data;
 
-      // speak conversational response first
       await speakText(conversational_response);
 
       if (is_complete) {
@@ -175,9 +191,8 @@ export default function InterviewPage() {
         setStatusText("Interview complete!");
         setTimeout(() => navigate(`/results/${sessionId}`), 1500);
       } else {
-        // then speak the next question
         setCurrentQuestion(current_question_number);
-        setStatusText("Interviewer is speaking...");
+        setStatusText("Alex is speaking...");
         await speakText(next_question);
         startListening();
       }
@@ -258,7 +273,6 @@ export default function InterviewPage() {
             </svg>
           </div>
 
-          {/* subtitle what AI is saying */}
           {subtitleText && (
             <div style={styles.subtitle}>
               <p style={styles.subtitleText}>"{subtitleText}"</p>
@@ -294,7 +308,7 @@ export default function InterviewPage() {
           )}
           {transcript && (
             <div style={styles.userSubtitle}>
-              <p style={styles.subtitleText}>{transcript}</p>
+              <p style={styles.subtitleText}>{truncate(transcript, 100)}</p>
             </div>
           )}
         </div>

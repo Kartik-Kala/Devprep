@@ -9,24 +9,9 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
 const roles = [
-  {
-    id: "Frontend",
-    title: "Frontend",
-    description: "React, Vue, Angular, CSS, JavaScript",
-    icon: LayoutTemplate,
-  },
-  {
-    id: "Backend",
-    title: "Backend",
-    description: "Node.js, Python, Java, Databases, APIs",
-    icon: Database,
-  },
-  {
-    id: "Full Stack",
-    title: "Full Stack",
-    description: "End-to-end development expertise",
-    icon: Layers,
-  },
+  { id: "Frontend", title: "Frontend", description: "React, Vue, Angular, CSS, JavaScript", icon: LayoutTemplate },
+  { id: "Backend", title: "Backend", description: "Node.js, Python, Java, Databases, APIs", icon: Database },
+  { id: "Full Stack", title: "Full Stack", description: "End-to-end development expertise", icon: Layers },
 ];
 
 const experienceLevels = [
@@ -95,11 +80,8 @@ export default function LandingPage() {
       data-testid="landing-page"
       className="min-h-screen flex flex-col justify-center items-center relative overflow-hidden px-4 py-12"
     >
-      {/* Background gradient overlay */}
       <div className="absolute inset-0 bg-gradient-to-tr from-emerald-500/5 via-transparent to-transparent pointer-events-none" />
-      
-      {/* Background image with low opacity */}
-      <div 
+      <div
         className="absolute inset-0 opacity-10 pointer-events-none"
         style={{
           backgroundImage: 'url(https://images.unsplash.com/photo-1641749471127-3f76436e8b38?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTN8MHwxfHNlYXJjaHwyfHxhYnN0cmFjdCUyMGRhcmslMjBtaW5pbWFsJTIwdGVjaG5vbG9neSUyMGJhY2tncm91bmQlMjBkaWdpdGFsJTIwbWVzaHxlbnwwfHx8fDE3NzM4MTQ2NDV8MA&ixlib=rb-4.1.0&q=85)',
@@ -109,7 +91,8 @@ export default function LandingPage() {
       />
 
       <div className="relative z-10 max-w-4xl mx-auto w-full">
-        {/* Hero Section */}
+
+        {/* Hero */}
         <div className="text-center mb-12 animate-fade-in">
           <h1 className="font-mono font-bold text-4xl sm:text-5xl lg:text-6xl tracking-tight text-white mb-4">
             Master Your <span className="text-emerald-500">Tech Interview</span>
@@ -121,9 +104,7 @@ export default function LandingPage() {
 
         {/* Role Selection */}
         <section className="mb-10 animate-slide-up" style={{ animationDelay: "0.1s" }}>
-          <h2 className="font-mono font-bold text-lg text-slate-300 mb-4 text-left">
-            Select Your Role
-          </h2>
+          <h2 className="font-mono font-bold text-lg text-slate-300 mb-4 text-left">Select Your Role</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {roles.map((role) => {
               const Icon = role.icon;
@@ -132,52 +113,77 @@ export default function LandingPage() {
                 <button
                   key={role.id}
                   onClick={() => setSelectedRole(role.id)}
-                  className={`role-card p-6 rounded-lg text-left transition-all duration-300 ${
-                    isSelected ? "selected" : ""
-                  }`}
+                  style={{
+                    background: isSelected ? "rgba(16,185,129,0.1)" : "rgba(30,41,59,0.5)",
+                    border: `1px solid ${isSelected ? "rgba(16,185,129,0.6)" : "rgba(51,65,85,0.5)"}`,
+                    boxShadow: isSelected ? "0 0 20px rgba(16,185,129,0.15)" : "none",
+                    borderRadius: 8,
+                    padding: "24px",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    transition: "all 0.2s ease",
+                    width: "100%",
+                  }}
                 >
-                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center mb-4 ${
-                    isSelected ? "bg-emerald-500/20" : "bg-slate-800"
-                  }`}>
-                    <Icon className={`w-6 h-6 ${isSelected ? "text-emerald-400" : "text-slate-400"}`} />
+                  <div style={{
+                    width: 48, height: 48, borderRadius: 8,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    marginBottom: 16,
+                    background: isSelected ? "rgba(16,185,129,0.2)" : "rgba(30,41,59,0.8)",
+                  }}>
+                    <Icon size={24} color={isSelected ? "#34d399" : "#64748b"} />
                   </div>
-                  <h3 className={`font-mono font-bold text-lg mb-2 ${
-                    isSelected ? "text-emerald-400" : "text-white"
-                  }`}>
+                  <h3 style={{ fontFamily: "JetBrains Mono, monospace", fontWeight: 700, fontSize: 18, marginBottom: 8, color: isSelected ? "#34d399" : "#fff" }}>
                     {role.title}
                   </h3>
-                  <p className="text-sm text-slate-400">{role.description}</p>
+                  <p style={{ fontSize: 14, color: "#94a3b8", margin: 0 }}>{role.description}</p>
                 </button>
               );
             })}
           </div>
         </section>
 
-        {/* Experience Selection */}
+        {/* Experience Level */}
         <section className="mb-10 animate-slide-up" style={{ animationDelay: "0.2s" }}>
-          <h2 className="font-mono font-bold text-lg text-slate-300 mb-4 text-left">
-            Experience Level
-          </h2>
-          <div className="experience-toggle inline-flex">
-            {experienceLevels.map((level) => (
-              <button
-                key={level.id}
-                onClick={() => setSelectedExperience(level.id)}
-                className={`experience-option ${
-                  selectedExperience === level.id ? "selected" : ""
-                }`}
-              >
-                {level.label}
-              </button>
-            ))}
+          <h2 className="font-mono font-bold text-lg text-slate-300 mb-4 text-left">Experience Level</h2>
+          <div style={{
+            display: "inline-flex",
+            background: "rgba(15,23,42,0.8)",
+            border: "1px solid rgba(51,65,85,0.5)",
+            borderRadius: 8,
+            padding: 4,
+            gap: 4,
+          }}>
+            {experienceLevels.map((level) => {
+              const isSelected = selectedExperience === level.id;
+              return (
+                <button
+                  key={level.id}
+                  onClick={() => setSelectedExperience(level.id)}
+                  style={{
+                    padding: "10px 24px",
+                    borderRadius: 6,
+                    fontSize: 14,
+                    fontWeight: 500,
+                    fontFamily: "JetBrains Mono, monospace",
+                    cursor: "pointer",
+                    border: "none",
+                    transition: "all 0.2s ease",
+                    background: isSelected ? "rgba(16,185,129,0.15)" : "transparent",
+                    color: isSelected ? "#34d399" : "#94a3b8",
+                    boxShadow: isSelected ? "0 0 12px rgba(16,185,129,0.2)" : "none",
+                  }}
+                >
+                  {level.label}
+                </button>
+              );
+            })}
           </div>
         </section>
 
-        {/* Interview Round Selection */}
+        {/* Interview Round */}
         <section className="mb-10 animate-slide-up" style={{ animationDelay: "0.25s" }}>
-          <h2 className="font-mono font-bold text-lg text-slate-300 mb-4 text-left">
-            Interview Round
-          </h2>
+          <h2 className="font-mono font-bold text-lg text-slate-300 mb-4 text-left">Interview Round</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
             {modes.map((mode) => {
               const Icon = mode.icon;
@@ -186,40 +192,46 @@ export default function LandingPage() {
                 <button
                   key={mode.id}
                   onClick={() => setSelectedMode(mode.id)}
-                  className={`role-card p-4 rounded-lg text-left transition-all duration-300 ${
-                    isSelected ? "selected" : ""
-                  }`}
+                  style={{
+                    background: isSelected ? "rgba(16,185,129,0.08)" : "rgba(30,41,59,0.5)",
+                    border: `1px solid ${isSelected ? "rgba(16,185,129,0.6)" : "rgba(51,65,85,0.5)"}`,
+                    boxShadow: isSelected ? "0 0 16px rgba(16,185,129,0.15)" : "none",
+                    borderRadius: 8,
+                    padding: "16px 12px",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    transition: "all 0.2s ease",
+                    width: "100%",
+                  }}
                 >
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${
-                    isSelected ? "bg-emerald-500/20" : "bg-slate-800"
-                  }`}>
-                    <Icon className={`w-5 h-5 ${isSelected ? "text-emerald-400" : "text-slate-400"}`} />
+                  <div style={{
+                    width: 40, height: 40, borderRadius: 8,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    marginBottom: 12,
+                    background: isSelected ? "rgba(16,185,129,0.2)" : "rgba(30,41,59,0.8)",
+                  }}>
+                    <Icon size={20} color={isSelected ? "#34d399" : "#64748b"} />
                   </div>
-                  <h3 className={`font-mono font-bold text-sm mb-1 ${
-                    isSelected ? "text-emerald-400" : "text-white"
-                  }`}>
+                  <h3 style={{ fontFamily: "JetBrains Mono, monospace", fontWeight: 700, fontSize: 13, marginBottom: 4, color: isSelected ? "#34d399" : "#fff" }}>
                     {mode.label}
                   </h3>
-                  <p className="text-xs text-slate-400 leading-snug">{mode.desc}</p>
+                  <p style={{ fontSize: 11, color: "#64748b", margin: 0, lineHeight: 1.4 }}>{mode.desc}</p>
                 </button>
               );
             })}
           </div>
         </section>
 
-        {/* CTA Button */}
+        {/* CTA */}
         <div className="text-center animate-slide-up" style={{ animationDelay: "0.3s" }}>
           <Button
-            data-testid="start-interview-btn"
             onClick={handleStartInterview}
             disabled={isLoading || !canStart}
-            className="btn-primary px-8 py-6 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn-primary px-8 py-6 text-lg"
+            style={{ opacity: canStart ? 1 : 0.4, cursor: canStart ? "pointer" : "not-allowed" }}
           >
             {isLoading ? (
-              <>
-                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                Starting Interview...
-              </>
+              <><Loader2 className="w-5 h-5 mr-2 animate-spin" />Starting Interview...</>
             ) : (
               "Start Interview"
             )}
@@ -230,6 +242,7 @@ export default function LandingPage() {
             </p>
           )}
         </div>
+
       </div>
     </main>
   );
