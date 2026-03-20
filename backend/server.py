@@ -1,3 +1,4 @@
+import re
 from fastapi import FastAPI, APIRouter, HTTPException
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -24,7 +25,7 @@ api_router = APIRouter(prefix="/api")
 class StartInterviewRequest(BaseModel):
     role: str
     experience: str
-    mode: str  # technical, dsa, system_design, hr, behavioral
+    mode: str
 
 class StartInterviewResponse(BaseModel):
     session_id: str
@@ -66,34 +67,49 @@ MODE_CONFIG = {
     "dsa": {
         "label": "DSA",
         "description": "Data structures, algorithms, and problem-solving",
-        "question_focus": "Ask about data structures (arrays, linked lists, trees, graphs, hashmaps), algorithms (sorting, searching, dynamic programming), time/space complexity, and problem-solving approaches. Ask them to explain their approach verbally — no coding needed.",
+        "question_focus": "Ask about data structures (arrays, linked lists, trees, graphs, hashmaps), algorithms (sorting, searching, dynamic programming), time/space complexity, and problem-solving approaches. Ask them to explain their approach verbally.",
         "total_questions": 5,
     },
     "system_design": {
         "label": "System Design",
         "description": "Designing scalable systems and architecture",
-        "question_focus": "Ask about designing real-world systems (URL shortener, chat app, ride sharing, etc.), scalability, databases, caching, load balancing, microservices. Ask them to walk through their design decisions.",
+        "question_focus": "Ask about designing real-world systems (URL shortener, chat app, ride sharing, etc.), scalability, databases, caching, load balancing, microservices.",
         "total_questions": 4,
     },
     "hr": {
         "label": "HR Round",
         "description": "HR and culture fit questions",
-        "question_focus": "Ask standard HR questions: why do you want to join, where do you see yourself in 5 years, salary expectations, notice period, strengths and weaknesses, why are you leaving your current role. Keep it conversational.",
+        "question_focus": "Ask standard HR questions: why do you want to join, where do you see yourself in 5 years, salary expectations, notice period, strengths and weaknesses.",
         "total_questions": 5,
     },
     "behavioral": {
         "label": "Behavioral",
         "description": "Situation-based behavioral questions",
-        "question_focus": "Ask STAR-format behavioral questions: tell me about a time you handled a conflict, a time you failed and what you learned, a time you had to work under pressure, a time you showed leadership, a time you had to learn something quickly. Probe for specific examples.",
+        "question_focus": "Ask STAR-format behavioral questions about conflict, failure, pressure, leadership, and learning quickly.",
         "total_questions": 5,
     },
 }
 
-# ─── Prompts ──────────────────────────────────────────────────────────────────
+# ─── Helpers ──────────────────────────────────────────────────────────────────
+
+def clean_response(text: str) -> str:
+    """Remove any leaked format tags from AI response."""
+    text = re.sub(r'NEXT_QUESTION:.*', '', text, flags=re.DOTALL)
+    text = re.sub(r'SCORE:\s*\d+.*', '', text, flags=re.DOTALL)
+    text = re.sub(r'\bDONE\b.*', '', text, flags=re.DOTALL)
+    text = re.sub(r'RESPONSE:', '', text)
+    return text.strip()
+
+def clean_question(text: str) -> str:
+    """Remove any leaked format tags from question."""
+    text = re.sub(r'SCORE:\s*\d+.*', '', text, flags=re.DOTALL)
+    text = re.sub(r'RESPONSE:.*', '', text, flags=re.DOTALL)
+    text = re.sub(r'\bDONE\b.*', '', text, flags=re.DOTALL)
+    return text.strip()
 
 def get_system_prompt(role: str, experience: str, mode: str) -> str:
     config = MODE_CONFIG.get(mode, MODE_CONFIG["technical"])
-    return f"""You are Alex, a friendly but rigorous interviewer conducting a {config['label']} interview round for a {role} developer with {experience} experience.
+    return f"""You are Alex, a friendly but rigorous interviewer conducting a {config['label']} interview for a {role} developer with {experience} experience.
 
 This round focuses on: {config['description']}
 
@@ -101,8 +117,7 @@ Your personality:
 - Warm and professional, like a real interviewer
 - You acknowledge good answers genuinely and specifically
 - You gently push back on vague or incomplete answers
-- You make the candidate feel comfortable but challenged
-- You speak naturally, conversationally — not like a robot
+- You speak naturally and conversationally
 
 Question focus: {config['question_focus']}"""
 
@@ -110,7 +125,7 @@ def get_first_question_prompt(role: str, experience: str, mode: str) -> str:
     config = MODE_CONFIG.get(mode, MODE_CONFIG["technical"])
     return f"""Start a {config['label']} interview for a {role} developer ({experience} level).
 
-Give a brief warm welcome (1 sentence) then ask your first question.
+Give a brief warm welcome then ask your first question.
 
 Format:
 INTRO: [one warm sentence welcoming them]
@@ -136,15 +151,13 @@ def get_conversational_response_prompt(
 Current question: {question}
 Candidate's answer: {answer}
 
-{"This is the LAST question. After responding, wrap up warmly and wish them luck." if is_last else f"This is question {question_number} of {total}."}
+{"This is the LAST question. After responding, wrap up warmly." if is_last else f"This is question {question_number} of {total}."}
 
-Respond like a real interviewer. Be specific about what they said — don't be generic.
+RESPONSE: [2-3 sentences acknowledging their answer specifically. Reference what they said. If good, say what you liked. If incomplete, gently note what was missing.]
 
-RESPONSE: [2-3 sentences acknowledging their answer. Reference something specific they said. If good, say what you liked. If incomplete, gently note what was missing.]
+{"DONE" if is_last else f"NEXT_QUESTION: [Ask a new {config['label']} question on a different topic]"}
 
-{"DONE" if is_last else f"NEXT_QUESTION: [Ask a new {config['label']} question on a different topic. Keep focus on: {config['question_focus']}]"}
-
-SCORE: [1-10 based on answer quality]"""
+SCORE: [1-10]"""
 
 def get_summary_prompt(role: str, experience: str, mode: str, qa_list: List[dict], overall_score: int) -> str:
     config = MODE_CONFIG.get(mode, MODE_CONFIG["technical"])
@@ -158,7 +171,7 @@ def get_summary_prompt(role: str, experience: str, mode: str, qa_list: List[dict
 
 Overall Score: {overall_score}/10
 
-Write a 3-4 sentence honest summary: what they did well, what needs improvement, and one specific recommendation. Be direct but encouraging. End with one actionable tip."""
+Write a 3-4 sentence honest summary: what they did well, what needs improvement, and one specific recommendation."""
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
 
@@ -186,14 +199,12 @@ async def start_interview(request: StartInterviewRequest):
         intro = ""
         first_question = raw
         if "INTRO:" in raw and "QUESTION:" in raw:
-            intro_part = raw.split("QUESTION:")[0].replace("INTRO:", "").strip()
-            question_part = raw.split("QUESTION:")[-1].strip()
-            intro = intro_part
-            first_question = question_part
+            intro = raw.split("QUESTION:")[0].replace("INTRO:", "").strip()
+            first_question = raw.split("QUESTION:")[-1].strip()
         elif "QUESTION:" in raw:
             first_question = raw.split("QUESTION:")[-1].strip()
 
-        # combine intro + question for TTS
+        first_question = clean_question(first_question)
         full_opening = f"{intro} {first_question}".strip() if intro else first_question
 
     except Exception as e:
@@ -257,34 +268,34 @@ async def submit_answer(request: AnswerRequest):
             after = raw.split("RESPONSE:")[1]
             if "NEXT_QUESTION:" in after:
                 parts = after.split("NEXT_QUESTION:")
-                conversational_response = parts[0].strip()
+                conversational_response = clean_response(parts[0])
                 rest = parts[1]
                 if "SCORE:" in rest:
                     q_parts = rest.split("SCORE:")
-                    next_question = q_parts[0].strip()
+                    next_question = clean_question(q_parts[0])
                     try:
-                        score = int(q_parts[1].strip().split()[0])
+                        score = int(re.search(r'\d+', q_parts[1]).group())
                     except:
                         score = 5
                 else:
-                    next_question = rest.strip()
+                    next_question = clean_question(rest)
             elif "DONE" in after:
                 if "SCORE:" in after:
                     parts = after.split("SCORE:")
-                    conversational_response = parts[0].replace("DONE", "").strip()
+                    conversational_response = clean_response(parts[0])
                     try:
-                        score = int(parts[1].strip().split()[0])
+                        score = int(re.search(r'\d+', parts[1]).group())
                     except:
                         score = 5
                 else:
-                    conversational_response = after.replace("DONE", "").strip()
+                    conversational_response = clean_response(after)
             else:
-                conversational_response = after.strip()
+                conversational_response = clean_response(after)
         else:
-            conversational_response = raw
+            conversational_response = clean_response(raw)
 
         if not conversational_response:
-            conversational_response = "Thanks for that answer. Moving on."
+            conversational_response = "Thanks for that answer. Let's continue."
 
     except Exception as e:
         logging.error(f"Groq error: {e}")
