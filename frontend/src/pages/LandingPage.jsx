@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { LayoutTemplate, Database, Layers, Loader2, Code2, GitBranch, Layout, Users, Brain } from "lucide-react";
+import { LayoutTemplate, Database, Layers, Loader2, Code2, GitBranch, Layout, Users, Brain, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import axios from "axios";
@@ -26,7 +26,11 @@ const modes = [
   { id: "system_design", label: "System Design", icon: Layout, desc: "Scalable systems & architecture" },
   { id: "hr", label: "HR Round", icon: Users, desc: "Culture fit & HR questions" },
   { id: "behavioral", label: "Behavioral", icon: Brain, desc: "Situation-based STAR questions" },
+  { id: "pitch", label: "Investor Pitch", icon: TrendingUp, desc: "Practice your startup pitch with a VC" },
 ];
+
+// pitch mode doesn't need a developer role — use a generic label
+const PITCH_MODE = "pitch";
 
 export default function LandingPage() {
   const navigate = useNavigate();
@@ -35,9 +39,15 @@ export default function LandingPage() {
   const [selectedMode, setSelectedMode] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  const isPitchMode = selectedMode === PITCH_MODE;
+
   const handleStartInterview = async () => {
-    if (!selectedRole || !selectedExperience || !selectedMode) {
-      toast.error("Please select role, experience, and interview round");
+    if (!selectedMode) {
+      toast.error("Please select an interview round");
+      return;
+    }
+    if (!isPitchMode && (!selectedRole || !selectedExperience)) {
+      toast.error("Please select your role and experience level");
       return;
     }
 
@@ -45,16 +55,16 @@ export default function LandingPage() {
 
     if (window.posthog) {
       window.posthog.capture("interview_started", {
-        role: selectedRole,
-        experience: selectedExperience,
+        role: isPitchMode ? "Founder" : selectedRole,
+        experience: isPitchMode ? "Founder" : selectedExperience,
         mode: selectedMode,
       });
     }
 
     try {
       const response = await axios.post(`${API}/interview/start`, {
-        role: selectedRole,
-        experience: selectedExperience,
+        role: isPitchMode ? "Founder" : selectedRole,
+        experience: isPitchMode ? "Founder" : selectedExperience,
         mode: selectedMode,
       });
       navigate(`/interview/${response.data.session_id}`, {
@@ -73,7 +83,7 @@ export default function LandingPage() {
     }
   };
 
-  const canStart = selectedRole && selectedExperience && selectedMode;
+  const canStart = selectedMode && (isPitchMode || (selectedRole && selectedExperience));
 
   return (
     <main
@@ -98,104 +108,32 @@ export default function LandingPage() {
             Master Your <span className="text-emerald-500">Tech Interview</span>
           </h1>
           <p className="text-slate-400 text-base md:text-lg max-w-xl mx-auto leading-relaxed">
-            AI-powered mock interviews tailored for Indian developers. Practice with real questions and get instant feedback.
+            AI-powered mock interviews tailored for Indian developers and founders. Practice with real questions and get instant feedback.
           </p>
         </div>
 
-        {/* Role Selection */}
+        {/* Interview Round — pick this first */}
         <section className="mb-10 animate-slide-up" style={{ animationDelay: "0.1s" }}>
-          <h2 className="font-mono font-bold text-lg text-slate-300 mb-4 text-left">Select Your Role</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {roles.map((role) => {
-              const Icon = role.icon;
-              const isSelected = selectedRole === role.id;
-              return (
-                <button
-                  key={role.id}
-                  onClick={() => setSelectedRole(role.id)}
-                  style={{
-                    background: isSelected ? "rgba(16,185,129,0.1)" : "rgba(30,41,59,0.5)",
-                    border: `1px solid ${isSelected ? "rgba(16,185,129,0.6)" : "rgba(51,65,85,0.5)"}`,
-                    boxShadow: isSelected ? "0 0 20px rgba(16,185,129,0.15)" : "none",
-                    borderRadius: 8,
-                    padding: "24px",
-                    textAlign: "left",
-                    cursor: "pointer",
-                    transition: "all 0.2s ease",
-                    width: "100%",
-                  }}
-                >
-                  <div style={{
-                    width: 48, height: 48, borderRadius: 8,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    marginBottom: 16,
-                    background: isSelected ? "rgba(16,185,129,0.2)" : "rgba(30,41,59,0.8)",
-                  }}>
-                    <Icon size={24} color={isSelected ? "#34d399" : "#64748b"} />
-                  </div>
-                  <h3 style={{ fontFamily: "JetBrains Mono, monospace", fontWeight: 700, fontSize: 18, marginBottom: 8, color: isSelected ? "#34d399" : "#fff" }}>
-                    {role.title}
-                  </h3>
-                  <p style={{ fontSize: 14, color: "#94a3b8", margin: 0 }}>{role.description}</p>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* Experience Level */}
-        <section className="mb-10 animate-slide-up" style={{ animationDelay: "0.2s" }}>
-          <h2 className="font-mono font-bold text-lg text-slate-300 mb-4 text-left">Experience Level</h2>
-          <div style={{
-            display: "inline-flex",
-            background: "rgba(15,23,42,0.8)",
-            border: "1px solid rgba(51,65,85,0.5)",
-            borderRadius: 8,
-            padding: 4,
-            gap: 4,
-          }}>
-            {experienceLevels.map((level) => {
-              const isSelected = selectedExperience === level.id;
-              return (
-                <button
-                  key={level.id}
-                  onClick={() => setSelectedExperience(level.id)}
-                  style={{
-                    padding: "10px 24px",
-                    borderRadius: 6,
-                    fontSize: 14,
-                    fontWeight: 500,
-                    fontFamily: "JetBrains Mono, monospace",
-                    cursor: "pointer",
-                    border: "none",
-                    transition: "all 0.2s ease",
-                    background: isSelected ? "rgba(16,185,129,0.15)" : "transparent",
-                    color: isSelected ? "#34d399" : "#94a3b8",
-                    boxShadow: isSelected ? "0 0 12px rgba(16,185,129,0.2)" : "none",
-                  }}
-                >
-                  {level.label}
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* Interview Round */}
-        <section className="mb-10 animate-slide-up" style={{ animationDelay: "0.25s" }}>
           <h2 className="font-mono font-bold text-lg text-slate-300 mb-4 text-left">Interview Round</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
             {modes.map((mode) => {
               const Icon = mode.icon;
               const isSelected = selectedMode === mode.id;
+              const isPitch = mode.id === PITCH_MODE;
               return (
                 <button
                   key={mode.id}
                   onClick={() => setSelectedMode(mode.id)}
                   style={{
-                    background: isSelected ? "rgba(16,185,129,0.08)" : "rgba(30,41,59,0.5)",
-                    border: `1px solid ${isSelected ? "rgba(16,185,129,0.6)" : "rgba(51,65,85,0.5)"}`,
-                    boxShadow: isSelected ? "0 0 16px rgba(16,185,129,0.15)" : "none",
+                    background: isSelected
+                      ? isPitch ? "rgba(245,158,11,0.08)" : "rgba(16,185,129,0.08)"
+                      : "rgba(30,41,59,0.5)",
+                    border: `1px solid ${isSelected
+                      ? isPitch ? "rgba(245,158,11,0.6)" : "rgba(16,185,129,0.6)"
+                      : "rgba(51,65,85,0.5)"}`,
+                    boxShadow: isSelected
+                      ? isPitch ? "0 0 16px rgba(245,158,11,0.15)" : "0 0 16px rgba(16,185,129,0.15)"
+                      : "none",
                     borderRadius: 8,
                     padding: "16px 12px",
                     textAlign: "left",
@@ -208,19 +146,127 @@ export default function LandingPage() {
                     width: 40, height: 40, borderRadius: 8,
                     display: "flex", alignItems: "center", justifyContent: "center",
                     marginBottom: 12,
-                    background: isSelected ? "rgba(16,185,129,0.2)" : "rgba(30,41,59,0.8)",
+                    background: isSelected
+                      ? isPitch ? "rgba(245,158,11,0.2)" : "rgba(16,185,129,0.2)"
+                      : "rgba(30,41,59,0.8)",
                   }}>
-                    <Icon size={20} color={isSelected ? "#34d399" : "#64748b"} />
+                    <Icon size={20} color={isSelected ? (isPitch ? "#f59e0b" : "#34d399") : "#64748b"} />
                   </div>
-                  <h3 style={{ fontFamily: "JetBrains Mono, monospace", fontWeight: 700, fontSize: 13, marginBottom: 4, color: isSelected ? "#34d399" : "#fff" }}>
+                  <h3 style={{
+                    fontFamily: "JetBrains Mono, monospace",
+                    fontWeight: 700,
+                    fontSize: 12,
+                    marginBottom: 4,
+                    color: isSelected ? (isPitch ? "#f59e0b" : "#34d399") : "#fff"
+                  }}>
                     {mode.label}
                   </h3>
-                  <p style={{ fontSize: 11, color: "#64748b", margin: 0, lineHeight: 1.4 }}>{mode.desc}</p>
+                  <p style={{ fontSize: 10, color: "#64748b", margin: 0, lineHeight: 1.4 }}>{mode.desc}</p>
                 </button>
               );
             })}
           </div>
         </section>
+
+        {/* Role + Experience — hidden for pitch mode */}
+        {!isPitchMode && (
+          <>
+            <section className="mb-10 animate-slide-up" style={{ animationDelay: "0.2s" }}>
+              <h2 className="font-mono font-bold text-lg text-slate-300 mb-4 text-left">Select Your Role</h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {roles.map((role) => {
+                  const Icon = role.icon;
+                  const isSelected = selectedRole === role.id;
+                  return (
+                    <button
+                      key={role.id}
+                      onClick={() => setSelectedRole(role.id)}
+                      style={{
+                        background: isSelected ? "rgba(16,185,129,0.1)" : "rgba(30,41,59,0.5)",
+                        border: `1px solid ${isSelected ? "rgba(16,185,129,0.6)" : "rgba(51,65,85,0.5)"}`,
+                        boxShadow: isSelected ? "0 0 20px rgba(16,185,129,0.15)" : "none",
+                        borderRadius: 8,
+                        padding: "24px",
+                        textAlign: "left",
+                        cursor: "pointer",
+                        transition: "all 0.2s ease",
+                        width: "100%",
+                      }}
+                    >
+                      <div style={{
+                        width: 48, height: 48, borderRadius: 8,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        marginBottom: 16,
+                        background: isSelected ? "rgba(16,185,129,0.2)" : "rgba(30,41,59,0.8)",
+                      }}>
+                        <Icon size={24} color={isSelected ? "#34d399" : "#64748b"} />
+                      </div>
+                      <h3 style={{ fontFamily: "JetBrains Mono, monospace", fontWeight: 700, fontSize: 18, marginBottom: 8, color: isSelected ? "#34d399" : "#fff" }}>
+                        {role.title}
+                      </h3>
+                      <p style={{ fontSize: 14, color: "#94a3b8", margin: 0 }}>{role.description}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="mb-10 animate-slide-up" style={{ animationDelay: "0.25s" }}>
+              <h2 className="font-mono font-bold text-lg text-slate-300 mb-4 text-left">Experience Level</h2>
+              <div style={{
+                display: "inline-flex",
+                background: "rgba(15,23,42,0.8)",
+                border: "1px solid rgba(51,65,85,0.5)",
+                borderRadius: 8,
+                padding: 4,
+                gap: 4,
+              }}>
+                {experienceLevels.map((level) => {
+                  const isSelected = selectedExperience === level.id;
+                  return (
+                    <button
+                      key={level.id}
+                      onClick={() => setSelectedExperience(level.id)}
+                      style={{
+                        padding: "10px 24px",
+                        borderRadius: 6,
+                        fontSize: 14,
+                        fontWeight: 500,
+                        fontFamily: "JetBrains Mono, monospace",
+                        cursor: "pointer",
+                        border: "none",
+                        transition: "all 0.2s ease",
+                        background: isSelected ? "rgba(16,185,129,0.15)" : "transparent",
+                        color: isSelected ? "#34d399" : "#94a3b8",
+                        boxShadow: isSelected ? "0 0 12px rgba(16,185,129,0.2)" : "none",
+                      }}
+                    >
+                      {level.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          </>
+        )}
+
+        {/* Pitch mode info banner */}
+        {isPitchMode && (
+          <div
+            className="mb-10 animate-slide-up"
+            style={{
+              background: "rgba(245,158,11,0.08)",
+              border: "1px solid rgba(245,158,11,0.3)",
+              borderRadius: 12,
+              padding: "16px 20px",
+              animationDelay: "0.2s",
+            }}
+          >
+            <p style={{ fontSize: 14, color: "#f59e0b", margin: 0, lineHeight: 1.6 }}>
+              <strong>Investor Pitch mode</strong> — You'll be pitching your startup to Rahul, a partner at a top Indian VC fund. He'll ask the hard questions investors actually ask. No role or experience needed — just your startup story.
+            </p>
+          </div>
+        )}
 
         {/* CTA */}
         <div className="text-center animate-slide-up" style={{ animationDelay: "0.3s" }}>
@@ -231,14 +277,16 @@ export default function LandingPage() {
             style={{ opacity: canStart ? 1 : 0.4, cursor: canStart ? "pointer" : "not-allowed" }}
           >
             {isLoading ? (
-              <><Loader2 className="w-5 h-5 mr-2 animate-spin" />Starting Interview...</>
+              <><Loader2 className="w-5 h-5 mr-2 animate-spin" />Starting...</>
             ) : (
-              "Start Interview"
+              isPitchMode ? "Start Pitch Meeting →" : "Start Interview →"
             )}
           </Button>
           {!canStart && (
             <p className="text-slate-500 text-sm mt-4">
-              Select a role, experience level, and interview round to begin
+              {!selectedMode
+                ? "Select an interview round to begin"
+                : "Select your role and experience level to begin"}
             </p>
           )}
         </div>

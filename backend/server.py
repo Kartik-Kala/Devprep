@@ -111,6 +111,12 @@ MODE_CONFIG = {
         "question_focus": "Ask STAR-format behavioral questions about real situations — a time you failed, a conflict with a teammate, a time you had to learn something fast, a time you showed ownership. Push for specific examples, not generic answers.",
         "total_questions": 5,
     },
+    "pitch": {
+        "label": "Investor Pitch",
+        "description": "Simulating a real investor meeting — VC or angel",
+        "question_focus": "Ask the questions investors actually ask: what problem are you solving and why does it matter, how big is the market, why now, why are you the right team, what is your business model and unit economics, who are your competitors and why will you win, what is your traction so far, how will you use the funding. Push back hard on vague answers. Reference Indian VC context — Peak XV, Blume, Elevation, Y Combinator.",
+        "total_questions": 6,
+    },
 }
 
 def clean_response(text: str) -> str:
@@ -128,6 +134,27 @@ def clean_question(text: str) -> str:
 
 def get_system_prompt(role: str, experience: str, mode: str) -> str:
     config = MODE_CONFIG.get(mode, MODE_CONFIG["technical"])
+
+    if mode == "pitch":
+        return """You are Rahul, a partner at a top Indian VC fund who has evaluated thousands of pitches. You are meeting a founder for the first time in a 30-minute pitch meeting.
+
+Your style:
+- Direct and skeptical — you have heard every pitch before and your default is no
+- You push hard on weak answers: "That's interesting but the market seems small — walk me through how you get to 100 crore ARR"
+- You acknowledge strong answers genuinely: "That's a sharp insight, most founders miss that"
+- You ask follow-up questions when answers are vague or feel rehearsed
+- You think in terms of returns, market size, defensibility, team quality, and timing
+- You reference the Indian startup ecosystem naturally — Zepto, CRED, Razorpay, Meesho as examples
+
+You are evaluating: clarity of thinking, market understanding, business model viability, founder conviction, self-awareness, and traction.
+
+Scoring — be honest:
+- 1-2: Vague, unprepared, or the founder doesn't understand their own business
+- 3-4: Some good points but major gaps — wouldn't pass the first filter
+- 5-6: Decent answer but not compelling enough to move forward
+- 7-8: Strong and clear — this founder has thought deeply about their business
+- 9-10: Exceptional — this is how you get a term sheet"""
+
     return f"""You are Alex, a senior engineer at a top Indian tech company conducting a {config['label']} interview for a {role} developer with {experience} experience.
 
 About this round: {config['description']}
@@ -153,6 +180,14 @@ Do not default to 5. Score based on what they actually said."""
 
 def get_first_question_prompt(role: str, experience: str, mode: str) -> str:
     config = MODE_CONFIG.get(mode, MODE_CONFIG["technical"])
+
+    if mode == "pitch":
+        return """You are starting a pitch meeting with a founder. Greet them briefly and naturally — like a VC who has back-to-back meetings. Then ask your opening question to kick off the pitch.
+
+Format exactly like this:
+INTRO: [one natural, direct sentence — like "Thanks for coming in, let's dive right in."]
+QUESTION: [Your opening question — typically "Tell me about what you're building and the problem you're solving." but make it feel natural and specific]"""
+
     return f"""You are starting a {config['label']} interview for a {role} developer ({experience} level).
 
 Greet them warmly in one sentence, then ask your first question. The question should be practical and immediately test real knowledge — not "tell me about yourself."
@@ -176,6 +211,22 @@ def get_conversational_response_prompt(
 
     is_last = question_number >= total
 
+    if mode == "pitch":
+        return f"""You are Rahul, a VC partner, in a pitch meeting with a founder.
+{history}
+You just asked: {question}
+The founder answered: {answer}
+
+{"This was your last question. Respond to their answer, then close the meeting naturally — tell them you'll be in touch or share a brief honest reaction to the overall pitch." if is_last else f"This is question {question_number} of {total} in the pitch meeting."}
+
+Respond like a real VC:
+
+RESPONSE: [2-3 sentences. React specifically to what they said. If it was strong, acknowledge it and say why. If it was weak or vague, push back directly — "That's a bit hand-wavy, can you give me specifics?" or "Most investors would want to see traction before that conversation." Don't be gentle if the answer doesn't hold up.]
+
+{"DONE" if is_last else "NEXT_QUESTION: [Ask your next investor question. Make it feel like a natural follow-up in a real pitch meeting — probe deeper on something they said, or move to the next important area: market, competition, team, traction, business model, funding plan.]"}
+
+SCORE: [1-10 based strictly on the quality and clarity of their answer. Score 1-3 if vague or unprepared, 4-6 if decent but not compelling, 7-10 only if genuinely strong.]"""
+
     return f"""You are Alex, mid-interview with a {role} developer ({experience} level) in a {config['label']} round.
 {history}
 You just asked: {question}
@@ -197,6 +248,20 @@ def get_summary_prompt(role: str, experience: str, mode: str, qa_list: List[dict
         f"Q{i+1}: {q['question']}\nAnswer: {q['answer']}\nScore: {q['score']}/10"
         for i, q in enumerate(qa_list) if q.get('answer')
     ])
+
+    if mode == "pitch":
+        return f"""You just finished a pitch meeting with a founder. Here is the full conversation:
+
+{qa_text}
+
+Overall Score: {overall_score}/10
+
+Write a 3-4 sentence post-meeting debrief like a VC writing internal notes after a founder leaves:
+- What was the strongest part of their pitch (reference something specific they said)
+- What was the biggest concern or gap that would stop you from moving forward
+- One specific thing they should sharpen before their next investor meeting
+Be direct and honest. This is internal feedback, not a rejection letter."""
+
     return f"""You just finished a {config['label']} interview with a {role} developer ({experience} level).
 
 Here is the full interview:
@@ -341,7 +406,7 @@ async def submit_answer(request: AnswerRequest):
                     model="llama-3.3-70b-versatile",
                     messages=[
                         {"role": "system", "content": get_system_prompt(session["role"], session["experience"], session["mode"])},
-                        {"role": "user", "content": f"Ask a single practical {session['mode']} interview question for a {session['role']} developer ({session['experience']} level). Just the question, nothing else."}
+                        {"role": "user", "content": f"Ask a single practical {session['mode']} question. Just the question, nothing else."}
                     ],
                     temperature=0.7,
                     max_tokens=200
@@ -395,7 +460,7 @@ async def get_results(session_id: str):
         summary = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
-                {"role": "system", "content": "You are a career coach giving direct, honest interview feedback."},
+                {"role": "system", "content": "You are giving direct, honest feedback."},
                 {"role": "user", "content": get_summary_prompt(
                     session["role"], session["experience"], session["mode"],
                     session["questions"], overall_score
