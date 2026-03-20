@@ -20,9 +20,6 @@ groq_client = Groq(api_key=os.environ.get('GROQ_API_KEY'))
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
-# ─── File-based session store ─────────────────────────────────────────────────
-# Sessions are saved to disk so they survive server restarts on Render free tier
-
 SESSIONS_FILE = ROOT_DIR / "sessions.json"
 
 def load_sessions() -> dict:
@@ -49,8 +46,6 @@ def set_session(session_id: str, data: dict):
     sessions = load_sessions()
     sessions[session_id] = data
     save_sessions(sessions)
-
-# ─── Models ───────────────────────────────────────────────────────────────────
 
 class StartInterviewRequest(BaseModel):
     role: str
@@ -85,8 +80,6 @@ class ResultsResponse(BaseModel):
     questions: List[dict]
     summary: str
 
-# ─── Mode configs ─────────────────────────────────────────────────────────────
-
 MODE_CONFIG = {
     "technical": {
         "label": "Technical",
@@ -119,8 +112,6 @@ MODE_CONFIG = {
         "total_questions": 5,
     },
 }
-
-# ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def clean_response(text: str) -> str:
     text = re.sub(r'NEXT_QUESTION:.*', '', text, flags=re.DOTALL)
@@ -201,8 +192,6 @@ Overall Score: {overall_score}/10
 
 Write a 3-4 sentence honest summary: what they did well, what needs improvement, and one specific recommendation."""
 
-# ─── Routes ───────────────────────────────────────────────────────────────────
-
 @api_router.get("/")
 async def root():
     return {"message": "DevPrep India API"}
@@ -272,6 +261,11 @@ async def submit_answer(request: AnswerRequest):
     current_q_index = session["current_question"] - 1
     current_question = session["questions"][current_q_index]["question"]
     previous_qa = [q for q in session["questions"][:current_q_index] if q.get("answer")]
+    is_complete = session["current_question"] >= session["total_questions"]
+
+    conversational_response = ""
+    next_question = None
+    score = 5
 
     try:
         completion = groq_client.chat.completions.create(
@@ -289,10 +283,6 @@ async def submit_answer(request: AnswerRequest):
             max_tokens=400
         )
         raw = completion.choices[0].message.content.strip()
-
-        conversational_response = ""
-        next_question = None
-        score = 5
 
         if "RESPONSE:" in raw:
             after = raw.split("RESPONSE:")[1]
@@ -327,6 +317,22 @@ async def submit_answer(request: AnswerRequest):
         if not conversational_response:
             conversational_response = "Thanks for that answer. Let's continue."
 
+        # fallback: if not last question but next_question is empty, generate one
+        if not is_complete and not next_question:
+            try:
+                fallback = groq_client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {"role": "system", "content": get_system_prompt(session["role"], session["experience"], session["mode"])},
+                        {"role": "user", "content": f"Ask a single {session['mode']} interview question for a {session['role']} developer ({session['experience']} level). Just the question, nothing else."}
+                    ],
+                    temperature=0.7,
+                    max_tokens=200
+                )
+                next_question = fallback.choices[0].message.content.strip()
+            except:
+                next_question = "Can you tell me about a challenging technical problem you've solved recently?"
+
     except Exception as e:
         logging.error(f"Groq error: {e}")
         conversational_response = "Thanks for that answer."
@@ -336,8 +342,6 @@ async def submit_answer(request: AnswerRequest):
     session["questions"][current_q_index]["answer"] = request.answer
     session["questions"][current_q_index]["feedback"] = conversational_response
     session["questions"][current_q_index]["score"] = score
-
-    is_complete = session["current_question"] >= session["total_questions"]
 
     if not is_complete and next_question:
         session["questions"].append({

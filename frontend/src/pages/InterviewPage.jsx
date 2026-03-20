@@ -198,12 +198,14 @@ export default function InterviewPage() {
         setState(STATE.COMPLETE);
         setStatusText("Interview complete!");
         setTimeout(() => navigate(`/results/${sessionId}`), 1500);
-      } else {
-        setCurrentQuestion(current_question_number);
-        setStatusText("Alex is speaking...");
-        await speakText(next_question);
-        startListening();
-      }
+     } else {
+  setCurrentQuestion(current_question_number);
+  setStatusText("Alex is speaking...");
+  if (next_question && next_question !== "null") {
+    await speakText(next_question);
+  }
+  startListening();
+}
     } catch (err) {
       console.error("Submit error:", err);
 
