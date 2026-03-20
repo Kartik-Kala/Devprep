@@ -84,31 +84,31 @@ MODE_CONFIG = {
     "technical": {
         "label": "Technical",
         "description": "Core technical concepts, frameworks, and practical coding knowledge",
-        "question_focus": "Ask about technical concepts, debugging, architecture decisions, and practical implementation knowledge relevant to their role",
+        "question_focus": "Ask practical technical questions — debugging scenarios, architecture decisions, how specific technologies work under the hood, trade-offs between approaches. Questions should feel like things a senior engineer would actually ask, not textbook definitions.",
         "total_questions": 5,
     },
     "dsa": {
         "label": "DSA",
         "description": "Data structures, algorithms, and problem-solving",
-        "question_focus": "Ask about data structures (arrays, linked lists, trees, graphs, hashmaps), algorithms (sorting, searching, dynamic programming), time/space complexity, and problem-solving approaches. Ask them to explain their approach verbally.",
+        "question_focus": "Ask about data structures and algorithms verbally — how would you approach this problem, what data structure would you use and why, what is the time and space complexity. Cover a range: arrays, trees, graphs, hashmaps, sorting, searching, dynamic programming.",
         "total_questions": 5,
     },
     "system_design": {
         "label": "System Design",
         "description": "Designing scalable systems and architecture",
-        "question_focus": "Ask about designing real-world systems (URL shortener, chat app, ride sharing, etc.), scalability, databases, caching, load balancing, microservices.",
+        "question_focus": "Ask to design real systems Indian developers would know — payment systems like UPI, food delivery like Zomato, ride sharing, social media feeds, URL shorteners. Focus on scale, databases, caching, APIs, failure handling.",
         "total_questions": 4,
     },
     "hr": {
         "label": "HR Round",
         "description": "HR and culture fit questions",
-        "question_focus": "Ask standard HR questions: why do you want to join, where do you see yourself in 5 years, salary expectations, notice period, strengths and weaknesses.",
+        "question_focus": "Ask genuine HR questions that reveal character and fit — motivation, conflict handling, career goals, salary expectations, notice period, how they work in teams. Make it feel like a real HR conversation, not a checklist.",
         "total_questions": 5,
     },
     "behavioral": {
         "label": "Behavioral",
         "description": "Situation-based behavioral questions",
-        "question_focus": "Ask STAR-format behavioral questions about conflict, failure, pressure, leadership, and learning quickly.",
+        "question_focus": "Ask STAR-format behavioral questions about real situations — a time you failed, a conflict with a teammate, a time you had to learn something fast, a time you showed ownership. Push for specific examples, not generic answers.",
         "total_questions": 5,
     },
 }
@@ -128,27 +128,38 @@ def clean_question(text: str) -> str:
 
 def get_system_prompt(role: str, experience: str, mode: str) -> str:
     config = MODE_CONFIG.get(mode, MODE_CONFIG["technical"])
-    return f"""You are Alex, a friendly but rigorous interviewer conducting a {config['label']} interview for a {role} developer with {experience} experience.
+    return f"""You are Alex, a senior engineer at a top Indian tech company conducting a {config['label']} interview for a {role} developer with {experience} experience.
 
-This round focuses on: {config['description']}
+About this round: {config['description']}
 
-Your personality:
-- Warm and professional, like a real interviewer
-- You acknowledge good answers genuinely and specifically
-- You gently push back on vague or incomplete answers
-- You speak naturally and conversationally
+How you interview:
+- Ask sharp, practical questions that test real understanding — not definitions you can Google
+- When an answer is vague, probe: "Can you give me a specific example?" or "How would that work at scale?"
+- When an answer is good, acknowledge it genuinely and specifically — mention what impressed you
+- When an answer is wrong or incomplete, be honest but constructive — tell them exactly what was missing and why it matters
+- Sound like a real person having a conversation, not a bot reading a script
+- Keep your responses concise — 2-3 sentences max before asking the next question
 
-Question focus: {config['question_focus']}"""
+Question style: {config['question_focus']}
+
+Scoring — be honest and accurate:
+- 1-2: Wrong answer, "I don't know", or completely off track
+- 3-4: Partial answer, got some things right but missed key concepts
+- 5-6: Decent answer, covered the basics but lacked depth or examples
+- 7-8: Strong answer, clear understanding with good reasoning
+- 9-10: Excellent answer, could teach this to others
+
+Do not default to 5. Score based on what they actually said."""
 
 def get_first_question_prompt(role: str, experience: str, mode: str) -> str:
     config = MODE_CONFIG.get(mode, MODE_CONFIG["technical"])
-    return f"""Start a {config['label']} interview for a {role} developer ({experience} level).
+    return f"""You are starting a {config['label']} interview for a {role} developer ({experience} level).
 
-Give a brief warm welcome then ask your first question.
+Greet them warmly in one sentence, then ask your first question. The question should be practical and immediately test real knowledge — not "tell me about yourself."
 
-Format:
-INTRO: [one warm sentence welcoming them]
-QUESTION: [your first question]"""
+Format your response exactly like this:
+INTRO: [one warm, natural sentence]
+QUESTION: [your first interview question]"""
 
 def get_conversational_response_prompt(
     role: str, experience: str, mode: str,
@@ -159,24 +170,26 @@ def get_conversational_response_prompt(
     config = MODE_CONFIG.get(mode, MODE_CONFIG["technical"])
     history = ""
     if previous_qa:
-        history = "\nPrevious Q&A:\n"
+        history = "\nConversation so far:\n"
         for qa in previous_qa:
             history += f"Q: {qa['question']}\nA: {qa['answer']}\n\n"
 
     is_last = question_number >= total
 
-    return f"""You are Alex conducting a {config['label']} interview for a {role} developer ({experience} level).
+    return f"""You are Alex, mid-interview with a {role} developer ({experience} level) in a {config['label']} round.
 {history}
-Current question: {question}
-Candidate's answer: {answer}
+You just asked: {question}
+They answered: {answer}
 
-{"This is the LAST question. After responding, wrap up warmly." if is_last else f"This is question {question_number} of {total}."}
+{"This was the last question. Respond to their answer, then close the interview warmly in one sentence." if is_last else f"This is question {question_number} of {total}."}
 
-RESPONSE: [2-3 sentences acknowledging their answer specifically. Reference what they said. If good, say what you liked. If incomplete, gently note what was missing.]
+Now respond like a real interviewer:
 
-{"DONE" if is_last else f"NEXT_QUESTION: [Ask a new {config['label']} question on a different topic]"}
+RESPONSE: [2-3 sentences. Be specific — mention something they actually said. If it was good, say exactly why. If it was weak or wrong, tell them clearly what was missing and why it matters in real projects. Don't be vague. Don't say "great answer" if it wasn't.]
 
-SCORE: [1-10]"""
+{"DONE" if is_last else f"NEXT_QUESTION: [Ask your next {config['label']} question. Make it feel like a natural continuation of a real interview — practical, specific, something that would come up at Zomato, Razorpay, CRED, or a funded Indian startup.]"}
+
+SCORE: [Give an honest score from 1-10 based strictly on the quality of their answer. If they said they don't know or got it wrong, score 1-3. Don't default to 5.]"""
 
 def get_summary_prompt(role: str, experience: str, mode: str, qa_list: List[dict], overall_score: int) -> str:
     config = MODE_CONFIG.get(mode, MODE_CONFIG["technical"])
@@ -184,13 +197,18 @@ def get_summary_prompt(role: str, experience: str, mode: str, qa_list: List[dict
         f"Q{i+1}: {q['question']}\nAnswer: {q['answer']}\nScore: {q['score']}/10"
         for i, q in enumerate(qa_list) if q.get('answer')
     ])
-    return f"""You interviewed a {role} developer ({experience} level) for a {config['label']} round.
+    return f"""You just finished a {config['label']} interview with a {role} developer ({experience} level).
 
+Here is the full interview:
 {qa_text}
 
 Overall Score: {overall_score}/10
 
-Write a 3-4 sentence honest summary: what they did well, what needs improvement, and one specific recommendation."""
+Write a post-interview debrief in 3-4 sentences. Be direct and honest like a real interviewer giving feedback after the candidate leaves the room:
+- Mention one or two specific things they got right (reference actual answers)
+- Mention the biggest gap or weakness you noticed
+- Give one concrete, actionable recommendation — something specific to study or practice
+Don't be generic. Reference what they actually said."""
 
 @api_router.get("/")
 async def root():
@@ -317,21 +335,20 @@ async def submit_answer(request: AnswerRequest):
         if not conversational_response:
             conversational_response = "Thanks for that answer. Let's continue."
 
-        # fallback: if not last question but next_question is empty, generate one
         if not is_complete and not next_question:
             try:
                 fallback = groq_client.chat.completions.create(
                     model="llama-3.3-70b-versatile",
                     messages=[
                         {"role": "system", "content": get_system_prompt(session["role"], session["experience"], session["mode"])},
-                        {"role": "user", "content": f"Ask a single {session['mode']} interview question for a {session['role']} developer ({session['experience']} level). Just the question, nothing else."}
+                        {"role": "user", "content": f"Ask a single practical {session['mode']} interview question for a {session['role']} developer ({session['experience']} level). Just the question, nothing else."}
                     ],
                     temperature=0.7,
                     max_tokens=200
                 )
                 next_question = fallback.choices[0].message.content.strip()
             except:
-                next_question = "Can you tell me about a challenging technical problem you've solved recently?"
+                next_question = "Can you walk me through how you would debug a performance issue in a production application?"
 
     except Exception as e:
         logging.error(f"Groq error: {e}")
@@ -378,7 +395,7 @@ async def get_results(session_id: str):
         summary = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
-                {"role": "system", "content": "You are a career coach giving honest interview feedback."},
+                {"role": "system", "content": "You are a career coach giving direct, honest interview feedback."},
                 {"role": "user", "content": get_summary_prompt(
                     session["role"], session["experience"], session["mode"],
                     session["questions"], overall_score
