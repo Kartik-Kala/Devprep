@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { LayoutTemplate, Database, Layers, Loader2, Code2, GitBranch, Layout, Users, Brain, TrendingUp } from "lucide-react";
+import { LayoutTemplate, Database, Layers, Loader2, Code2, GitBranch, Layout, Users, Brain, TrendingUp, LogIn, LogOut, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import axios from "axios";
+import { useAuth } from "@/context/AuthContext";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -34,6 +35,7 @@ const PITCH_MODE = "pitch";
 
 export default function LandingPage() {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
   const [selectedRole, setSelectedRole] = useState(null);
   const [selectedExperience, setSelectedExperience] = useState(null);
   const [selectedMode, setSelectedMode] = useState(null);
@@ -101,6 +103,28 @@ export default function LandingPage() {
       />
 
       <div className="relative z-10 max-w-4xl mx-auto w-full">
+
+        {/* Auth bar */}
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+          {user ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 12, color: "rgba(255,255,255,0.4)" }}>{user.email}</span>
+              <button
+                onClick={() => navigate("/history")}
+                style={authBtnStyle}
+              >
+                <History size={14} /> History
+              </button>
+              <button onClick={logout} style={authBtnStyle}>
+                <LogOut size={14} /> Log Out
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => navigate("/auth")} style={authBtnStyle}>
+              <LogIn size={14} /> Log In
+            </button>
+          )}
+        </div>
 
         {/* Hero */}
         <div className="text-center mb-12 animate-fade-in">
@@ -295,3 +319,17 @@ export default function LandingPage() {
     </main>
   );
 }
+
+const authBtnStyle = {
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "7px 14px",
+  background: "rgba(255,255,255,0.06)",
+  border: "1px solid rgba(255,255,255,0.1)",
+  borderRadius: 8,
+  color: "rgba(255,255,255,0.7)",
+  fontSize: 13,
+  fontWeight: 500,
+  cursor: "pointer",
+};
