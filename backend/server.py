@@ -1,7 +1,8 @@
 import re
 import json
 import os
-from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi import FastAPI, APIRouter, HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 import logging
@@ -9,43 +10,125 @@ from pathlib import Path
 from pydantic import BaseModel
 from typing import List, Optional
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from groq import Groq
+from passlib.context import CryptContext
+from jose import JWTError, jwt
+from sqlalchemy.orm import Session
+from database import User, InterviewSession, create_tables, get_db
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 groq_client = Groq(api_key=os.environ.get('GROQ_API_KEY'))
 
+SECRET_KEY = os.environ.get("JWT_SECRET", "devprep-change-this-in-prod")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_DAYS = 30
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+bearer_scheme = HTTPBearer(auto_error=False)
+
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
-SESSIONS_FILE = ROOT_DIR / "sessions.json"
+@app.on_event("startup")
+def startup():
+    create_tables()
 
-def load_sessions() -> dict:
+# ---------------------------------------------------------------------------
+# Auth helpers
+# ---------------------------------------------------------------------------
+
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+def verify_password(plain: str, hashed: str) -> bool:
+    return pwd_context.verify(plain, hashed)
+
+def create_token(user_id: str) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
+    return jwt.encode({"sub": user_id, "exp": expire}, SECRET_KEY, algorithm=ALGORITHM)
+
+def get_current_user_id(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: Session = Depends(get_db)
+) -> Optional[str]:
+    if not credentials:
+        return None
     try:
-        if SESSIONS_FILE.exists():
-            with open(SESSIONS_FILE, "r") as f:
-                return json.load(f)
-    except Exception as e:
-        logging.error(f"Failed to load sessions: {e}")
-    return {}
+        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        return user_id or None
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-def save_sessions(sessions: dict):
-    try:
-        with open(SESSIONS_FILE, "w") as f:
-            json.dump(sessions, f)
-    except Exception as e:
-        logging.error(f"Failed to save sessions: {e}")
+def require_user(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: Session = Depends(get_db)
+) -> str:
+    user_id = get_current_user_id(credentials, db)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return user_id
 
-def get_session(session_id: str) -> Optional[dict]:
-    sessions = load_sessions()
-    return sessions.get(session_id)
+# ---------------------------------------------------------------------------
+# Session DB helpers
+# ---------------------------------------------------------------------------
 
-def set_session(session_id: str, data: dict):
-    sessions = load_sessions()
-    sessions[session_id] = data
-    save_sessions(sessions)
+def db_get_session(session_id: str, db: Session) -> Optional[dict]:
+    row = db.query(InterviewSession).filter(InterviewSession.session_id == session_id).first()
+    if not row:
+        return None
+    return {
+        "session_id": row.session_id,
+        "user_id": row.user_id,
+        "role": row.role,
+        "experience": row.experience,
+        "mode": row.mode,
+        "questions": row.questions,
+        "current_question": row.current_question,
+        "total_questions": row.total_questions,
+        "is_complete": row.is_complete,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
+
+def db_set_session(session_id: str, data: dict, db: Session):
+    row = db.query(InterviewSession).filter(InterviewSession.session_id == session_id).first()
+    if row:
+        row.questions = data["questions"]
+        row.current_question = data["current_question"]
+        row.is_complete = data["is_complete"]
+    else:
+        row = InterviewSession(
+            session_id=session_id,
+            user_id=data.get("user_id"),
+            role=data["role"],
+            experience=data["experience"],
+            mode=data["mode"],
+            questions=data["questions"],
+            current_question=data["current_question"],
+            total_questions=data["total_questions"],
+            is_complete=data["is_complete"],
+        )
+        db.add(row)
+    db.commit()
+
+# ---------------------------------------------------------------------------
+# Pydantic models
+# ---------------------------------------------------------------------------
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class AuthResponse(BaseModel):
+    token: str
+    email: str
 
 class StartInterviewRequest(BaseModel):
     role: str
@@ -79,6 +162,19 @@ class ResultsResponse(BaseModel):
     overall_score: int
     questions: List[dict]
     summary: str
+
+class SessionSummary(BaseModel):
+    session_id: str
+    role: str
+    experience: str
+    mode: str
+    overall_score: int
+    is_complete: bool
+    created_at: Optional[str]
+
+# ---------------------------------------------------------------------------
+# Interview config
+# ---------------------------------------------------------------------------
 
 MODE_CONFIG = {
     "technical": {
@@ -119,6 +215,10 @@ MODE_CONFIG = {
     },
 }
 
+# ---------------------------------------------------------------------------
+# Prompt helpers
+# ---------------------------------------------------------------------------
+
 def clean_response(text: str) -> str:
     text = re.sub(r'NEXT_QUESTION:.*', '', text, flags=re.DOTALL)
     text = re.sub(r'SCORE:\s*\d+.*', '', text, flags=re.DOTALL)
@@ -134,7 +234,6 @@ def clean_question(text: str) -> str:
 
 def get_system_prompt(role: str, experience: str, mode: str) -> str:
     config = MODE_CONFIG.get(mode, MODE_CONFIG["technical"])
-
     if mode == "pitch":
         return """You are Rahul, a partner at a top Indian VC fund who has evaluated thousands of pitches. You are meeting a founder for the first time in a 30-minute pitch meeting.
 
@@ -145,8 +244,6 @@ Your style:
 - You ask follow-up questions when answers are vague or feel rehearsed
 - You think in terms of returns, market size, defensibility, team quality, and timing
 - You reference the Indian startup ecosystem naturally — Zepto, CRED, Razorpay, Meesho as examples
-
-You are evaluating: clarity of thinking, market understanding, business model viability, founder conviction, self-awareness, and traction.
 
 Scoring — be honest:
 - 1-2: Vague, unprepared, or the founder doesn't understand their own business
@@ -180,13 +277,12 @@ Do not default to 5. Score based on what they actually said."""
 
 def get_first_question_prompt(role: str, experience: str, mode: str) -> str:
     config = MODE_CONFIG.get(mode, MODE_CONFIG["technical"])
-
     if mode == "pitch":
         return """You are starting a pitch meeting with a founder. Greet them briefly and naturally — like a VC who has back-to-back meetings. Then ask your opening question to kick off the pitch.
 
 Format exactly like this:
-INTRO: [one natural, direct sentence — like "Thanks for coming in, let's dive right in."]
-QUESTION: [Your opening question — typically "Tell me about what you're building and the problem you're solving." but make it feel natural and specific]"""
+INTRO: [one natural, direct sentence]
+QUESTION: [Your opening question]"""
 
     return f"""You are starting a {config['label']} interview for a {role} developer ({experience} level).
 
@@ -203,44 +299,41 @@ def get_conversational_response_prompt(
     previous_qa: List[dict]
 ) -> str:
     config = MODE_CONFIG.get(mode, MODE_CONFIG["technical"])
+
+    # Include current question in history so the model never repeats it
     history = ""
     if previous_qa:
         history = "\nConversation so far:\n"
         for qa in previous_qa:
             history += f"Q: {qa['question']}\nA: {qa['answer']}\n\n"
+    history += f"Current question: {question}\n"
 
     is_last = question_number >= total
 
     if mode == "pitch":
         return f"""You are Rahul, a VC partner, in a pitch meeting with a founder.
 {history}
-You just asked: {question}
 The founder answered: {answer}
 
-{"This was your last question. Respond to their answer, then close the meeting naturally — tell them you'll be in touch or share a brief honest reaction to the overall pitch." if is_last else f"This is question {question_number} of {total} in the pitch meeting."}
+{"This was your last question. Respond to their answer, then close the meeting naturally." if is_last else f"This is question {question_number} of {total} in the pitch meeting."}
 
-Respond like a real VC:
+RESPONSE: [2-3 sentences reacting specifically to what they said. Push back on weak answers, acknowledge strong ones.]
 
-RESPONSE: [2-3 sentences. React specifically to what they said. If it was strong, acknowledge it and say why. If it was weak or vague, push back directly — "That's a bit hand-wavy, can you give me specifics?" or "Most investors would want to see traction before that conversation." Don't be gentle if the answer doesn't hold up.]
+{"DONE" if is_last else "NEXT_QUESTION: [Next investor question — probe deeper or move to next area. Never repeat a question already asked.]"}
 
-{"DONE" if is_last else "NEXT_QUESTION: [Ask your next investor question. Make it feel like a natural follow-up in a real pitch meeting — probe deeper on something they said, or move to the next important area: market, competition, team, traction, business model, funding plan.]"}
-
-SCORE: [1-10 based strictly on the quality and clarity of their answer. Score 1-3 if vague or unprepared, 4-6 if decent but not compelling, 7-10 only if genuinely strong.]"""
+SCORE: [1-10 honest score]"""
 
     return f"""You are Alex, mid-interview with a {role} developer ({experience} level) in a {config['label']} round.
 {history}
-You just asked: {question}
 They answered: {answer}
 
 {"This was the last question. Respond to their answer, then close the interview warmly in one sentence." if is_last else f"This is question {question_number} of {total}."}
 
-Now respond like a real interviewer:
+RESPONSE: [2-3 sentences. Mention something specific they said. Be honest about what was good or missing.]
 
-RESPONSE: [2-3 sentences. Be specific — mention something they actually said. If it was good, say exactly why. If it was weak or wrong, tell them clearly what was missing and why it matters in real projects. Don't be vague. Don't say "great answer" if it wasn't.]
+{"DONE" if is_last else f"NEXT_QUESTION: [Next {config['label']} question — practical, specific, natural continuation. Never repeat a question already asked in the conversation above.]"}
 
-{"DONE" if is_last else f"NEXT_QUESTION: [Ask your next {config['label']} question. Make it feel like a natural continuation of a real interview — practical, specific, something that would come up at Zomato, Razorpay, CRED, or a funded Indian startup.]"}
-
-SCORE: [Give an honest score from 1-10 based strictly on the quality of their answer. If they said they don't know or got it wrong, score 1-3. Don't default to 5.]"""
+SCORE: [1-10 honest score. 1-3 if wrong/IDK, don't default to 5.]"""
 
 def get_summary_prompt(role: str, experience: str, mode: str, qa_list: List[dict], overall_score: int) -> str:
     config = MODE_CONFIG.get(mode, MODE_CONFIG["technical"])
@@ -250,37 +343,79 @@ def get_summary_prompt(role: str, experience: str, mode: str, qa_list: List[dict
     ])
 
     if mode == "pitch":
-        return f"""You just finished a pitch meeting with a founder. Here is the full conversation:
+        return f"""You just finished a pitch meeting with a founder. Full conversation:
 
 {qa_text}
 
 Overall Score: {overall_score}/10
 
-Write a 3-4 sentence post-meeting debrief like a VC writing internal notes after a founder leaves:
-- What was the strongest part of their pitch (reference something specific they said)
-- What was the biggest concern or gap that would stop you from moving forward
-- One specific thing they should sharpen before their next investor meeting
-Be direct and honest. This is internal feedback, not a rejection letter."""
+Write a 3-4 sentence post-meeting debrief like a VC writing internal notes:
+- Strongest part of the pitch (specific)
+- Biggest concern or gap
+- One thing to sharpen before next investor meeting
+Be direct. This is internal feedback, not a rejection letter."""
 
     return f"""You just finished a {config['label']} interview with a {role} developer ({experience} level).
 
-Here is the full interview:
+Full interview:
 {qa_text}
 
 Overall Score: {overall_score}/10
 
-Write a post-interview debrief in 3-4 sentences. Be direct and honest like a real interviewer giving feedback after the candidate leaves the room:
-- Mention one or two specific things they got right (reference actual answers)
-- Mention the biggest gap or weakness you noticed
-- Give one concrete, actionable recommendation — something specific to study or practice
+Write a post-interview debrief in 3-4 sentences. Direct and honest:
+- One or two specific things they got right (reference actual answers)
+- Biggest gap or weakness
+- One concrete actionable recommendation
 Don't be generic. Reference what they actually said."""
+
+# ---------------------------------------------------------------------------
+# Auth routes
+# ---------------------------------------------------------------------------
+
+@api_router.post("/auth/register", response_model=AuthResponse)
+async def register(req: RegisterRequest, db: Session = Depends(get_db)):
+    if len(req.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    existing = db.query(User).filter(User.email == req.email.lower().strip()).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    user = User(
+        id=str(uuid.uuid4()),
+        email=req.email.lower().strip(),
+        password_hash=hash_password(req.password)
+    )
+    db.add(user)
+    db.commit()
+    return AuthResponse(token=create_token(user.id), email=user.email)
+
+@api_router.post("/auth/login", response_model=AuthResponse)
+async def login(req: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == req.email.lower().strip()).first()
+    if not user or not verify_password(req.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    return AuthResponse(token=create_token(user.id), email=user.email)
+
+@api_router.get("/auth/me")
+async def me(user_id: str = Depends(require_user), db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"id": user.id, "email": user.email}
+
+# ---------------------------------------------------------------------------
+# Interview routes
+# ---------------------------------------------------------------------------
 
 @api_router.get("/")
 async def root():
     return {"message": "DevPrep India API"}
 
 @api_router.post("/interview/start", response_model=StartInterviewResponse)
-async def start_interview(request: StartInterviewRequest):
+async def start_interview(
+    request: StartInterviewRequest,
+    db: Session = Depends(get_db),
+    user_id: Optional[str] = Depends(get_current_user_id)
+):
     session_id = str(uuid.uuid4())
     config = MODE_CONFIG.get(request.mode, MODE_CONFIG["technical"])
 
@@ -313,6 +448,7 @@ async def start_interview(request: StartInterviewRequest):
 
     session_data = {
         "session_id": session_id,
+        "user_id": user_id,
         "role": request.role,
         "experience": request.experience,
         "mode": request.mode,
@@ -320,10 +456,9 @@ async def start_interview(request: StartInterviewRequest):
         "current_question": 1,
         "total_questions": config["total_questions"],
         "is_complete": False,
-        "created_at": datetime.now(timezone.utc).isoformat()
     }
 
-    set_session(session_id, session_data)
+    db_set_session(session_id, session_data, db)
 
     return StartInterviewResponse(
         session_id=session_id,
@@ -334,8 +469,8 @@ async def start_interview(request: StartInterviewRequest):
     )
 
 @api_router.post("/interview/answer", response_model=AnswerResponse)
-async def submit_answer(request: AnswerRequest):
-    session = get_session(request.session_id)
+async def submit_answer(request: AnswerRequest, db: Session = Depends(get_db)):
+    session = db_get_session(request.session_id, db)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     if session["is_complete"]:
@@ -436,7 +571,7 @@ async def submit_answer(request: AnswerRequest):
     session["current_question"] += 1
     session["is_complete"] = is_complete
 
-    set_session(request.session_id, session)
+    db_set_session(request.session_id, session, db)
 
     return AnswerResponse(
         conversational_response=conversational_response,
@@ -448,8 +583,8 @@ async def submit_answer(request: AnswerRequest):
     )
 
 @api_router.get("/interview/results/{session_id}", response_model=ResultsResponse)
-async def get_results(session_id: str):
-    session = get_session(session_id)
+async def get_results(session_id: str, db: Session = Depends(get_db)):
+    session = db_get_session(session_id, db)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
@@ -482,6 +617,36 @@ async def get_results(session_id: str):
         questions=session["questions"],
         summary=summary
     )
+
+@api_router.get("/interview/history", response_model=List[SessionSummary])
+async def get_history(
+    user_id: str = Depends(require_user),
+    db: Session = Depends(get_db)
+):
+    rows = db.query(InterviewSession)\
+        .filter(InterviewSession.user_id == user_id)\
+        .order_by(InterviewSession.created_at.desc())\
+        .limit(20)\
+        .all()
+
+    result = []
+    for row in rows:
+        scores = [q["score"] for q in (row.questions or []) if q.get("score") is not None]
+        overall_score = round(sum(scores) / len(scores)) if scores else 0
+        result.append(SessionSummary(
+            session_id=row.session_id,
+            role=row.role,
+            experience=row.experience,
+            mode=row.mode,
+            overall_score=overall_score,
+            is_complete=row.is_complete,
+            created_at=row.created_at.isoformat() if row.created_at else None,
+        ))
+    return result
+
+# ---------------------------------------------------------------------------
+# App setup
+# ---------------------------------------------------------------------------
 
 app.include_router(api_router)
 
