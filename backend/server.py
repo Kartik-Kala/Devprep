@@ -1,5 +1,4 @@
 import re
-import json
 import os
 from fastapi import FastAPI, APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -12,7 +11,7 @@ from typing import List, Optional
 import uuid
 from datetime import datetime, timezone, timedelta
 from groq import Groq
-from passlib.context import CryptContext
+import bcrypt as bcrypt_lib
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 from database import User, InterviewSession, create_tables, get_db
@@ -26,7 +25,6 @@ SECRET_KEY = os.environ.get("JWT_SECRET", "devprep-change-this-in-prod")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 30
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 bearer_scheme = HTTPBearer(auto_error=False)
 
 app = FastAPI()
@@ -41,10 +39,10 @@ def startup():
 # ---------------------------------------------------------------------------
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    return bcrypt_lib.hashpw(password.encode(), bcrypt_lib.gensalt()).decode()
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    return bcrypt_lib.checkpw(plain.encode(), hashed.encode())
 
 def create_token(user_id: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
