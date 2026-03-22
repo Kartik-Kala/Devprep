@@ -304,5 +304,5 @@ const s = {
     textAlign: "center",
     margin: 0,
     marginTop: -8,
-  },
+  }, 
 };
